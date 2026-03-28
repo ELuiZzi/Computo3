@@ -1,7 +1,7 @@
-package ElementosPro;
+package ui.componentes;
 
-import Utils.Estilos;
-import Utils.Recursos;
+import util.Estilos;
+import util.Recursos;
 
 import javax.swing.*;
 import java.awt.*;

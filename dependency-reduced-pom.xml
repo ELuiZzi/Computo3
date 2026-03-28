@@ -3,8 +3,9 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.example</groupId>
   <artifactId>Computo2</artifactId>
-  <version>1.0.7</version>
+  <version>1.1.0</version>
   <build>
+    <finalName>Computo2</finalName>
     <plugins>
       <plugin>
         <artifactId>maven-shade-plugin</artifactId>
@@ -18,7 +19,7 @@
             <configuration>
               <transformers>
                 <transformer>
-                  <mainClass>Utils.SistemaPOS</mainClass>
+                  <mainClass>ui.ventanas.SistemaPOS</mainClass>
                 </transformer>
               </transformers>
             </configuration>

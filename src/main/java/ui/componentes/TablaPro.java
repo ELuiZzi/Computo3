@@ -1,6 +1,6 @@
-package ElementosPro;
+package ui.componentes;
 
-import Utils.Estilos;
+import util.Estilos;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableCellRenderer;

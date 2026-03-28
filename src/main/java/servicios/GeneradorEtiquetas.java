@@ -1,11 +1,12 @@
-package Utils;
+package servicios;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.util.List;
 import javax.imageio.ImageIO;
-import ElementosPro.*;
+
+import ui.componentes.JOptionPanePro;
 
 public class GeneradorEtiquetas {
 

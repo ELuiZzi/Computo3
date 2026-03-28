@@ -1,10 +1,11 @@
-package Paneles;
+package ui.paneles;
 
-import Utils.AlgoritmoPrecios;
-import Conexión.ConexionBD;
-import Utils.Estilos;
-import Utils.GeneradorCodigoBarras;
-import Utils.GeneradorEtiquetas;
+import servicios.AlgoritmoPrecios;
+import config.ConexionBD;
+import ui.ventanas.DialogoCodigos;
+import util.Estilos;
+import servicios.GeneradorCodigoBarras;
+import servicios.GeneradorEtiquetas;
 
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
@@ -21,7 +22,10 @@ import java.net.URI;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
-import ElementosPro.*;
+
+import ui.componentes.BotonPro;
+import ui.componentes.JOptionPanePro;
+import ui.componentes.TablaPro;
 
 public class PanelInventario extends JPanel {
     // Componentes
@@ -86,10 +90,16 @@ public class PanelInventario extends JPanel {
         BotonPro btnGenCode = new BotonPro("Generar", Estilos.COLOR_INPUT, this::generarCodigoAleatorio);
         btnGenCode.setPreferredSize(new Dimension(70, 25));
 
+        // --- BOTÓN PARA GENERAR CÓDIGOS EXTRA ---
+        BotonPro btnMultiCode = new BotonPro("+", Estilos.COLOR_ACCENT, this::abrirMultiCodigos);
+        btnMultiCode.setPreferredSize(new Dimension(30, 25));
+        btnMultiCode.setToolTipText("Administrar códigos adicionales (Colores, Lotes)");
+
+
         JPanel pCodigo = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         pCodigo.setBackground(Estilos.COLOR_PANEL);
-
         pCodigo.add(txtCodigo);
+        pCodigo.add(btnMultiCode);
         pCodigo.add(btnGenCode);
 
         addCampo(panelForm, g, 0, 0, "ID (Auto):", txtId);
@@ -297,6 +307,19 @@ public class PanelInventario extends JPanel {
         cargarTabla();
     }
 
+    private void abrirMultiCodigos() {
+        if (txtId.getText().isEmpty()) {
+            JOptionPanePro.mostrarMensaje(this, "Aviso", "Primero guarda el producto principal.", "ADVERTENCIA");
+            return;
+        }
+        int id = Integer.parseInt(txtId.getText());
+        String nombre = txtNombre.getText();
+
+        // Abrir el diálogo modal
+        // (Asegúrate de pasar la referencia al JFrame principal, o null si no lo tienes a la mano)
+        new DialogoCodigos(null, id, nombre).setVisible(true);
+    }
+
     private void filtrarInventario() {
         String texto = txtBuscar.getText().trim();
 
@@ -312,11 +335,16 @@ public class PanelInventario extends JPanel {
             // 1. (codigo_barras = ?) -> Búsqueda exacta y prioritaria.
             // 2. OR (nombre LIKE ?) -> Búsqueda parcial.
             // 3. AND activo = 1 -> Solo productos no eliminados.
-            String sql = "SELECT * FROM productos WHERE (codigo_barras = ? OR nombre LIKE ?) AND activo = 1";
+            String sql = "SELECT * FROM productos WHERE " +
+                    "(codigo_barras = ? " +
+                    " OR id IN (SELECT id_producto FROM codigos_adicionales WHERE codigo = ?) " +
+                    " OR nombre LIKE ?) " +
+                    "AND activo = 1";
 
             PreparedStatement ps = conn.prepareStatement(sql);
-            ps.setString(1, texto);           // Parámetro 1: Texto exacto (para código)
-            ps.setString(2, "%" + texto + "%"); // Parámetro 2: %Texto% (para nombre)
+            ps.setString(1, texto);
+            ps.setString(2, texto);
+            ps.setString(3, "%" + texto + "%");
 
             ResultSet rs = ps.executeQuery();
 
@@ -581,7 +609,7 @@ public class PanelInventario extends JPanel {
 
                 double margenCalculado = ((precioUsuario - costo) / costo) * 100;
                 lblMargenCalc.setText("Margen: " + String.format("%.2f", margenCalculado) + "%");
-                //ElementosPro.JOptionPanePro.mostrarMensaje(this, "Cálculo Inverso", "Margen calculado según tu precio de venta.", "INFO");
+                //ui.componentes.JOptionPanePro.mostrarMensaje(this, "Cálculo Inverso", "Margen calculado según tu precio de venta.", "INFO");
 
 
             } else {
@@ -640,7 +668,7 @@ public class PanelInventario extends JPanel {
 
         String etiqueta = "=== ETIQUETA ===\n" + nombre + "\n" + "$" + precio + "\n" + "================";
 
-        // Aquí podrías mandarlo a una impresora real, por ahora ElementosPro.JOptionPanePro
+        // Aquí podrías mandarlo a una impresora real, por ahora ui.componentes.JOptionPanePro
         JOptionPanePro.mostrarMensaje(this, "Impresión de Etiqueta", etiqueta, "INFO");
         System.out.println(etiqueta);
     }
@@ -665,7 +693,7 @@ public class PanelInventario extends JPanel {
     private void generarImagenProducto() {
         int row = tabla.getSelectedRow();
         if (row == -1) {
-            // Prueba del manejo de null en ElementosPro.JOptionPanePro
+            // Prueba del manejo de null en ui.componentes.JOptionPanePro
             JOptionPanePro.mostrarMensaje(null, "Selección", "Por favor selecciona un producto.", "ADVERTENCIA");
             return;
         }

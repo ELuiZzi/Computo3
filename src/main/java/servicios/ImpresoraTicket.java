@@ -1,7 +1,6 @@
-package Utils;
+package servicios;
 
 import javax.print.PrintService;
-import java.awt.FontFormatException;
 import java.awt.*;
 import java.awt.print.*;
 import java.io.File;
@@ -10,7 +9,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
-import ElementosPro.JOptionPanePro;
+import ui.componentes.JOptionPanePro;
 import javax.swing.ImageIcon;
 
 public class ImpresoraTicket {

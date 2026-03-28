@@ -1,4 +1,4 @@
-package Conexión;
+package config;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -8,7 +8,8 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Properties;
-import ElementosPro.*;
+
+import ui.componentes.JOptionPanePro;
 
 public class ConexionBD {
 

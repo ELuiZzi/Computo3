@@ -1,8 +1,9 @@
-package Paneles;
+package ui.paneles;
 
-import Conexión.ConexionBD;
-import Utils.Estilos;
-import Utils.GeneradorTicket;
+import config.ConexionBD;
+import servicios.GeneradorTicketDigital;
+import util.Estilos;
+import servicios.GeneradorTicket;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -14,8 +15,11 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
-import ElementosPro.*;
-import Utils.ImpresoraTicket;
+
+import servicios.ImpresoraTicket;
+import ui.componentes.BotonPro;
+import ui.componentes.JOptionPanePro;
+import ui.componentes.TablaPro;
 
 public class PanelFinanzas extends JPanel {
     private final JComboBox<String> cmbMes;
@@ -53,9 +57,15 @@ public class PanelFinanzas extends JPanel {
         // Botón Consultar
         BotonPro btnVer = new BotonPro("Ver Reporte", Estilos.COLOR_ACCENT, this::consultar);
 
-        // Botón Reimprimir Ticket
+        // Botón Reimprimir Ticket Físico
         BotonPro btnTicket = new BotonPro("Imprimir Ticket","impresora.png", new Color(255, 140, 0), this::reimprimirTicket);
+
+        // Botón Ticket Digital
+        BotonPro btnDigital = new BotonPro("Ticket Digital", "imagen.png", new Color(0, 158, 227), this::generarTicketDigitalSeleccionado);
+
+        // Botón Anular
         BotonPro btnAnular = new BotonPro("Anular Venta", "eliminar.png", Color.RED, this::anularVentaSeleccionada);
+
 
         panelFiltros.add(lblF);
         panelFiltros.add(cmbMes);
@@ -63,6 +73,8 @@ public class PanelFinanzas extends JPanel {
         panelFiltros.add(Box.createHorizontalStrut(20));
         panelFiltros.add(btnVer);
         panelFiltros.add(btnTicket);
+        panelFiltros.add(btnDigital); // <--- Agregado aquí
+        panelFiltros.add(Box.createHorizontalStrut(10));
         panelFiltros.add(btnAnular);
 
         // --- 2. TABLAS MAESTRO-DETALLE ---
@@ -125,30 +137,106 @@ public class PanelFinanzas extends JPanel {
         add(panelInferior, BorderLayout.SOUTH);
     }
 
+    private void generarTicketDigitalSeleccionado() {
+        int row = tablaMaestra.getSelectedRow();
+        if (row == -1) {
+            JOptionPanePro.mostrarMensaje(this, "Aviso", "Selecciona una venta de la lista.", "ADVERTENCIA");
+            return;
+        }
+
+        // 1. Datos básicos de la tabla maestra
+        String folio = modeloMaestro.getValueAt(row, 0).toString();
+        double total = Double.parseDouble(modeloMaestro.getValueAt(row, 2).toString());
+
+        // Valores por defecto
+        String clienteNombre = "Cliente General";
+        String conceptoPrincipal = "Varios Productos";
+
+        // 2. Consultar BD para obtener datos reales (Cliente y Descripción)
+        try (Connection conn = ConexionBD.conectar()) {
+
+            // CONSULTA A: Obtener Nombre del Cliente (Si viene de una Orden de Servicio)
+            String sqlCliente = "SELECT c.nombre FROM ventas v " +
+                    "JOIN ordenes_servicio os ON v.id_orden_servicio = os.id " +
+                    "JOIN clientes c ON os.id_cliente = c.id " +
+                    "WHERE v.id = ?";
+            PreparedStatement psC = conn.prepareStatement(sqlCliente);
+            psC.setInt(1, Integer.parseInt(folio));
+            ResultSet rsC = psC.executeQuery();
+
+            if (rsC.next()) {
+                clienteNombre = rsC.getString("nombre"); // Ej: "Juan Perez"
+            }
+
+            // CONSULTA B: Obtener el concepto principal (Primer producto o Descripción del servicio)
+            // Usamos LIMIT 1 porque en el ticket digital estilo "Wallet" se ve mejor un concepto principal
+            String sqlConcepto = "SELECT COALESCE(d.descripcion, p.nombre) as descr " +
+                    "FROM detalle_venta d " +
+                    "LEFT JOIN productos p ON d.id_producto = p.id " +
+                    "WHERE d.id_venta = ? LIMIT 1";
+
+            PreparedStatement psD = conn.prepareStatement(sqlConcepto);
+            psD.setInt(1, Integer.parseInt(folio));
+            ResultSet rsD = psD.executeQuery();
+
+            if (rsD.next()) {
+                conceptoPrincipal = rsD.getString("descr"); // Ej: "MANTENIMIENTO PREVENTIVO..." o "USB 32GB"
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        // 3. Generar la Imagen
+        GeneradorTicketDigital.generarComprobanteUniversal(
+                folio,
+                clienteNombre,      // Nombre real o "Cliente General"
+                conceptoPrincipal,  // Descripción real del servicio/producto
+                "",                 // Detalle vacío (opcional)
+                total,
+                true                // Sello de PAGADO
+        );
+    }
+
     public void consultar() {
         modeloMaestro.setRowCount(0);
         modeloDetalle.setRowCount(0);
-        double v = 0, g = 0;
+
+        double v = 0;
+        double g = 0;
+
         int m = cmbMes.getSelectedIndex() + 1;
         int a = Integer.parseInt(cmbAnio.getSelectedItem().toString());
 
         try (Connection conn = ConexionBD.conectar()) {
-            // 1. Cargar Tabla
-            PreparedStatement ps = conn.prepareStatement("SELECT * FROM ventas WHERE MONTH(fecha)=? AND YEAR(fecha)=?");
+            // CAMBIO AQUÍ: Agregamos "ORDER BY id DESC" al final
+            String sql = "SELECT * FROM ventas WHERE MONTH(fecha) = ? AND YEAR(fecha) = ? ORDER BY id DESC";
+
+            PreparedStatement ps = conn.prepareStatement(sql);
             ps.setInt(1, m);
             ps.setInt(2, a);
+
             ResultSet rs = ps.executeQuery();
+
             while (rs.next()) {
-                modeloMaestro.addRow(new Object[]{rs.getInt("id"), rs.getTimestamp("fecha"), rs.getDouble("total_venta"), rs.getDouble("ganancia_total")});
+                modeloMaestro.addRow(new Object[]{
+                        rs.getInt("id"),
+                        rs.getTimestamp("fecha"),
+                        rs.getDouble("total_venta"),
+                        rs.getDouble("ganancia_total")
+                });
+
                 v += rs.getDouble("total_venta");
                 g += rs.getDouble("ganancia_total");
             }
+
             lblVentas.setText("Ventas Mes: $" + String.format("%.2f", v));
             lblGanancias.setText("Ganancia Mes: $" + String.format("%.2f", g));
 
-            // 2. Cargar Gráfica Anual
+            // Cargar Gráficas (Métodos existentes)
             cargarDatosBarras(a);
             cargarDatosPastel(m, a);
+
         } catch (Exception e) {
             e.printStackTrace();
         }

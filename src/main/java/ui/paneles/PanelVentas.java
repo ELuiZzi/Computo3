@@ -1,8 +1,9 @@
-package Paneles;
+package ui.paneles;
 
-import Conexión.ConexionBD;
-import Utils.Estilos;
-import Utils.GeneradorTicket;
+import config.ConexionBD;
+import ui.componentes.ToastPro;
+import util.Estilos;
+import servicios.GeneradorTicket;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -14,8 +15,11 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
-import ElementosPro.*;
-import Utils.ImpresoraTicket;
+
+import servicios.ImpresoraTicket;
+import ui.componentes.BotonPro;
+import ui.componentes.JOptionPanePro;
+import ui.componentes.TablaPro;
 
 public class PanelVentas extends JPanel {
     private final JTextField txtCodigo;
@@ -205,8 +209,8 @@ public class PanelVentas extends JPanel {
 
                 // Diseño de Tarjeta de Producto (Tipo Botón)
                 BotonPro btnProducto = new BotonPro("", Estilos.COLOR_PANEL, () -> agregarAlCarrito(id));
-// Como ElementosPro.BotonPro usa GridBagLayout centrado, para replicar el HTML multilínea
-// tendríamos que modificar un poco ElementosPro.BotonPro o simplemente añadir un JLabel con HTML al ElementosPro.BotonPro.
+// Como ui.componentes.BotonPro usa GridBagLayout centrado, para replicar el HTML multilínea
+// tendríamos que modificar un poco ui.componentes.BotonPro o simplemente añadir un JLabel con HTML al ui.componentes.BotonPro.
 
 
                 // HTML para formatear el texto dentro del botón
@@ -227,11 +231,18 @@ public class PanelVentas extends JPanel {
     private void buscarProducto(String codigo) {
         if (codigo.isEmpty()) return;
         try (Connection conn = ConexionBD.conectar()) {
-            PreparedStatement ps = conn.prepareStatement("SELECT id FROM productos WHERE codigo_barras = ?");
+            String query = "SELECT * FROM productos WHERE (codigo_barras = ? OR id IN (SELECT id_producto FROM codigos_adicionales WHERE codigo = ?)) AND activo = 1";
+            PreparedStatement ps = conn.prepareStatement(query);
             ps.setString(1, codigo);
+            ps.setString(2, codigo);
+
             ResultSet rs = ps.executeQuery();
-            if (rs.next()) agregarAlCarrito(rs.getInt("id"));
-            else JOptionPanePro.mostrarMensaje(this, "Error", "Producto no Encontrado", "ERROR");
+            if (rs.next()) {
+                agregarAlCarrito(rs.getInt("id"));
+            }
+            else {
+                JOptionPanePro.mostrarMensaje(this, "Error", "Producto no Encontrado", "ERROR");
+            }
             txtCodigo.setText("");
             darFocoCodigo(); // Mantener foco
         } catch (Exception e) {
@@ -345,7 +356,7 @@ public class PanelVentas extends JPanel {
             List<GeneradorTicket.ItemTicket> listaTicket = new ArrayList<>();
 
             PreparedStatement psD = conn.prepareStatement("INSERT INTO detalle_venta (id_venta, id_producto, cantidad, subtotal) VALUES (?,?,?,?)");
-            PreparedStatement psS = conn.prepareStatement("UPDATE productos SET stock = stock - ?, cantidad_faltante = cantidad_faltante + ? WHERE id = ?");
+            PreparedStatement psS = conn.prepareStatement("UPDATE productos SET stock = stock - ?, cantidad_faltante = cantidad_faltante + ?, fecha_faltante = NOW() WHERE id = ?");
 
             for (int i = 0; i < modeloCarrito.getRowCount(); i++) {
                 int idProd = Integer.parseInt(modeloCarrito.getValueAt(i, 0).toString());
@@ -383,7 +394,8 @@ public class PanelVentas extends JPanel {
             // 2. VERIFICAR SI SE DEBE IMPRIMIR
             if (ImpresoraTicket.isAutoImprimir()) {
                 ImpresoraTicket.imprimir(ticket); // ENVÍA A LA IMPRESORA REAL
-                JOptionPanePro.mostrarMensaje(this, "", "Venta Finalizada <br> No olvides la bolsita", "INFO");
+                ToastPro.show("Venta Finalizada \n" +
+                        "No olvides la bolsita", "EXITO");
             } else {
                 // Si no es auto, podemos mostrarlo en consola o en un JTextArea
                 System.out.println("--- Ticket Generado (Impresión Deshabilitada) ---");

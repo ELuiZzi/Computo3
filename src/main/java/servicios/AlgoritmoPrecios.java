@@ -1,4 +1,4 @@
-package Utils;
+package servicios;
 
 public class AlgoritmoPrecios {
 

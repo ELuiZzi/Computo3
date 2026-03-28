@@ -1,6 +1,6 @@
-package Utils;
+package servicios;
 
-import ElementosPro.JOptionPanePro;
+import ui.componentes.JOptionPanePro;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;

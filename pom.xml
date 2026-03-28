@@ -6,9 +6,10 @@
 
     <groupId>org.example</groupId>
     <artifactId>Computo2</artifactId>
-    <version>1.0.7</version>
+    <version>1.1.0</version>
 
     <build>
+        <finalName>Computo2</finalName>
         <plugins>
             <!-- Plugin para crear el JAR ejecutable (Fat JAR) -->
             <plugin>
@@ -25,9 +26,9 @@
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <!-- AQUÍ SE DEFINE LA CLASE MAIN -->
-                                    <!-- Si Utils.SistemaPOS está en un paquete, pon: com.tu.paquete.Utils.SistemaPOS -->
-                                    <!-- Si está en la raíz (src/main/java), pon solo: Utils.SistemaPOS -->
-                                    <mainClass>Utils.SistemaPOS</mainClass>
+                                    <!-- Si ui.ventanas.SistemaPOS está en un paquete, pon: com.tu.paquete.ui.ventanas.SistemaPOS -->
+                                    <!-- Si está en la raíz (src/main/java), pon solo: ui.ventanas.SistemaPOS -->
+                                    <mainClass>ui.ventanas.SistemaPOS</mainClass>
                                 </transformer>
                             </transformers>
                         </configuration>
