@@ -301,9 +301,43 @@ public class PanelServicios extends JPanel {
         scrollPagos.getViewport().setBackground(Estilos.COLOR_PANEL);
 
         // Botón para agregar cargos (Servicios nuevos)
+        // Botón para agregar cargos (Servicios nuevos)
         JPanel pAddCargo = new JPanel(new FlowLayout(FlowLayout.LEFT));
         pAddCargo.setBackground(Estilos.COLOR_PANEL);
-        BotonPro btnAddCargo = new BotonPro("➕ Agregar Costo / Servicio", new Color(41, 98, 255), this::agregarCargoUI);
+
+        // --- 1. Creamos el menú desplegable ---
+        JPopupMenu menuCargos = new JPopupMenu();
+
+        JMenuItem itemServicio = new JMenuItem("🛠 Agregar Servicio (Fijo/Especial)");
+        itemServicio.addActionListener(e -> {
+            if (idOrdenActual == -1) { JOptionPanePro.mostrarMensaje(this, "Aviso", "Guarda la orden primero.", "ADVERTENCIA"); return; }
+            new DialogoServiciosFijos((Frame) SwingUtilities.getWindowAncestor(this), idOrdenActual).setVisible(true);
+            cargarHistorialPagos(idOrdenActual);
+        });
+
+        JMenuItem itemProducto = new JMenuItem("📦 Agregar Refacción (Inventario)");
+        itemProducto.addActionListener(e -> {
+            if (idOrdenActual == -1) { JOptionPanePro.mostrarMensaje(this, "Aviso", "Guarda la orden primero.", "ADVERTENCIA"); return; }
+            // Llamamos a la ventana transaccional que creamos en el Paso 1
+            new ui.ventanas.DialogoAgregarProducto((Frame) SwingUtilities.getWindowAncestor(this), idOrdenActual).setVisible(true);
+            cargarHistorialPagos(idOrdenActual);
+        });
+
+        menuCargos.add(itemServicio);
+        menuCargos.add(itemProducto);
+
+        // --- 2. Creamos el botón (Le añadimos una flechita ▼ visual) ---
+        BotonPro btnAddCargo = new BotonPro("➕ Agregar Costo ▼", new Color(41, 98, 255), () -> {});
+
+        // --- 3. Lógica del Mouse (Hover y Clic) ---
+        btnAddCargo.addMouseListener(new MouseAdapter() {
+           @Override
+            public void mousePressed(MouseEvent e) {
+                // También se abre al hacer clic, por si el hover falla
+                menuCargos.show(btnAddCargo, 0, btnAddCargo.getHeight());
+            }
+        });
+
         // Botón para eliminar el último movimiento (por si hay error)
         BotonPro btnBorrarMov = new BotonPro("Borrar Seleccionado", new Color(200, 50, 50), this::eliminarMovimiento);
         btnBorrarMov.setPreferredSize(new Dimension(140, 35));
@@ -521,52 +555,51 @@ public class PanelServicios extends JPanel {
         actualizarCostoTotalOrden(idOrden, totalCargos);
     }
 
-    private void agregarCargoUI() {
-        if (idOrdenActual == -1) {
-            JOptionPanePro.mostrarMensaje(this, "Aviso", "Guarda la orden primero para agregar costos.", "ADVERTENCIA");
-            return;
-        }
-
-        // Panel personalizado para pedir Concepto y Monto
-        // Suponiendo que el ID de la orden actual lo tienes en una variable 'ordenActualId'
-        DialogoServiciosFijos dialogo = new DialogoServiciosFijos((Frame) SwingUtilities.getWindowAncestor(this), idOrdenActual);
-        dialogo.setVisible(true);
-        cargarHistorialPagos(idOrdenActual);
-
-    }
-
     private void eliminarMovimiento() {
         int row = tablaPagos.getSelectedRow();
-        if (row == -1) {
-            ToastPro.show("Selecciona una fila", "ERROR");
-            return;
-        }
+        if (row == -1) return;
 
-        // Recuperamos datos de las columnas ocultas
-        // Nota: Asegúrate de ocultar las columnas 5 y 6 en el constructor si no quieres verlas
         int idRef = Integer.parseInt(modeloPagos.getValueAt(row, 5).toString());
         String tipo = modeloPagos.getValueAt(row, 6).toString();
-        String concepto = modeloPagos.getValueAt(row, 1).toString();
 
-        if (JOptionPanePro.mostrarConfirmacion(this, "Eliminar Movimiento", "¿Borrar '" + concepto + "'?\nEsto afectará el saldo.")) {
+        if (JOptionPanePro.mostrarConfirmacion(this, "Eliminar", "¿Borrar movimiento?")) {
             try (Connection conn = ConexionBD.conectar()) {
-                if ("CARGO".equals(tipo)) {
-                    // Borrar de cargos_orden
-                    conn.createStatement().executeUpdate("DELETE FROM cargos_orden WHERE id = " + idRef);
-                } else {
-                    // Borrar de ventas (Abono) - CUIDADO: Esto requiere anular la venta financiera
-                    // Por seguridad simple, aquí solo borramos el registro, pero idealmente deberías usar
-                    // la lógica de "Anular Venta" del panel Finanzas.
-                    // Para esta versión, permitiremos borrar directo si es un error inmediato.
-                    conn.createStatement().executeUpdate("DELETE FROM ventas WHERE id = " + idRef);
-                    conn.createStatement().executeUpdate("DELETE FROM detalle_venta WHERE id_venta = " + idRef);
-                }
+                conn.setAutoCommit(false);
+                try {
+                    if ("CARGO".equals(tipo)) {
+                        // A. Consultar si tiene producto vinculado
+                        String sqlBusca = "SELECT id_producto, cantidad FROM cargos_orden WHERE id = ?";
+                        PreparedStatement psB = conn.prepareStatement(sqlBusca);
+                        psB.setInt(1, idRef);
+                        ResultSet rsB = psB.executeQuery();
 
-                cargarHistorialPagos(idOrdenActual);
-                ToastPro.show("Movimiento Eliminado", "INFO");
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+                        if (rsB.next()) {
+                            int idProd = rsB.getInt("id_producto");
+                            int cant = rsB.getInt("cantidad");
+
+                            // B. Si es un producto (id > 0), devolvemos las unidades al estante
+                            if (idProd > 0) {
+                                conn.createStatement().executeUpdate(
+                                        "UPDATE productos SET stock = stock + " + cant + " WHERE id = " + idProd
+                                );
+                            }
+                        }
+                        // C. Borrar el cargo
+                        conn.createStatement().executeUpdate("DELETE FROM cargos_orden WHERE id = " + idRef);
+                    } else {
+                        // Lógica para ABONOS (Ventas)
+                        conn.createStatement().executeUpdate("DELETE FROM ventas WHERE id = " + idRef);
+                        conn.createStatement().executeUpdate("DELETE FROM detalle_venta WHERE id_venta = " + idRef);
+                    }
+
+                    conn.commit();
+                    cargarHistorialPagos(idOrdenActual);
+                    ToastPro.show("Movimiento eliminado e inventario actualizado", "INFO");
+                } catch (Exception ex) {
+                    conn.rollback();
+                    throw ex;
+                }
+            } catch (Exception e) { e.printStackTrace(); }
         }
     }
 
