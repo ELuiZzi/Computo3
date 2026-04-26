@@ -8,6 +8,7 @@ import servicios.GeneradorPDF;
 import servicios.GeneradorTicket;
 import servicios.ImpresoraTicket;
 import ui.componentes.*;
+import ui.ventanas.DialogoServiciosFijos;
 import util.*;
 
 import javax.swing.*;
@@ -527,40 +528,11 @@ public class PanelServicios extends JPanel {
         }
 
         // Panel personalizado para pedir Concepto y Monto
-        JPanel panel = new JPanel(new GridLayout(2, 2, 5, 10));
-        JTextField txtCon = new JTextField();
-        JTextField txtMon = new JTextField();
+        // Suponiendo que el ID de la orden actual lo tienes en una variable 'ordenActualId'
+        DialogoServiciosFijos dialogo = new DialogoServiciosFijos((Frame) SwingUtilities.getWindowAncestor(this), idOrdenActual);
+        dialogo.setVisible(true);
+        cargarHistorialPagos(idOrdenActual);
 
-        panel.add(new JLabel("Concepto (ej. Pieza, Revisión):"));
-        panel.add(txtCon);
-        panel.add(new JLabel("Costo ($):"));
-        panel.add(txtMon);
-
-        int res = JOptionPane.showConfirmDialog(this, panel, "Agregar Cargo a la Cuenta", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-
-        if (res == JOptionPane.OK_OPTION) {
-            try {
-                String concepto = txtCon.getText().toUpperCase();
-                double monto = Double.parseDouble(txtMon.getText());
-
-                if (concepto.isEmpty() || monto <= 0) return;
-
-                try (Connection conn = ConexionBD.conectar()) {
-                    String sql = "INSERT INTO cargos_orden (id_orden, concepto, monto) VALUES (?, ?, ?)";
-                    PreparedStatement ps = conn.prepareStatement(sql);
-                    ps.setInt(1, idOrdenActual);
-                    ps.setString(2, concepto);
-                    ps.setDouble(3, monto);
-                    ps.executeUpdate();
-
-                    // Recargamos el historial
-                    cargarHistorialPagos(idOrdenActual);
-                    ToastPro.show("Cargo Agregado", "EXITO");
-                }
-            } catch (Exception e) {
-                JOptionPanePro.mostrarMensaje(this, "Error", "Monto inválido", "ERROR");
-            }
-        }
     }
 
     private void eliminarMovimiento() {
@@ -750,7 +722,19 @@ public class PanelServicios extends JPanel {
     // Resto de métodos auxiliares (input, area, addLbl, parser, etc) se mantienen igual.
     // ...
     private JTextField input() { JTextField t = new JTextField(10); Estilos.estilizarInput(t); return t; }
-    private JTextArea area() { JTextArea t = new JTextArea(3, 10); t.setBackground(Estilos.COLOR_INPUT); t.setForeground(Color.WHITE); t.setBorder(BorderFactory.createLineBorder(Estilos.COLOR_BORDER)); return t; }
+    private JTextArea area() {
+        JTextArea t = new JTextArea(3, 10);
+        t.setBackground(Estilos.COLOR_INPUT);
+        t.setForeground(Color.WHITE);
+        t.setBorder(BorderFactory.createLineBorder(Estilos.COLOR_BORDER));
+
+        // --- NUEVO: Magia para que el texto salte de línea ---
+        t.setLineWrap(true);
+        t.setWrapStyleWord(true);
+        // -----------------------------------------------------
+
+        return t;
+    }
     private void addLbl(JPanel p, GridBagConstraints g, int x, int y, String t) { g.gridx=x; g.gridy=y; JLabel l=new JLabel(t); l.setForeground(Color.WHITE); p.add(l,g); }
     private double parser(String s) { try{return Double.parseDouble(s);}catch(Exception e){return 0;} }
     private JSlider slider(Color c) { JSlider s = new JSlider(0,100,50); s.setBackground(c); return s; }
@@ -791,24 +775,71 @@ public class PanelServicios extends JPanel {
             e.printStackTrace();
         }
     }
+
     private void enviarWhatsAppDesdeID(int id) {
-        try (Connection c = ConexionBD.conectar(); PreparedStatement ps = c.prepareStatement("SELECT o.estado, o.costo_estimado, o.anticipo, cl.telefono FROM ordenes_servicio o JOIN clientes cl ON o.id_cliente=cl.id WHERE o.id=?")) {
+        // Usamos los nombres reales: 'dispositivo' y 'marca_modelo'
+        String sql = "SELECT o.estado, o.costo_estimado, o.anticipo, o.dispositivo, o.marca_modelo, cl.telefono " +
+                "FROM ordenes_servicio o JOIN clientes cl ON o.id_cliente=cl.id WHERE o.id=?";
+
+        try (Connection c = ConexionBD.conectar(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setInt(1, id);
             ResultSet rs = ps.executeQuery();
+
             if (rs.next()) {
                 String tel = rs.getString("telefono");
                 String est = rs.getString("estado");
-                String msg = "Actualización Orden #" + id + ": " + est;
-                if ("LISTO".equals(est)) {
-                    double saldo = rs.getDouble("costo_estimado") - rs.getDouble("anticipo");
-                    msg += ". Su equipo está listo. Saldo pendiente: $" + saldo;
+
+                // Extraemos los datos con los nombres correctos
+                String dispositivo = rs.getString("dispositivo") != null ? rs.getString("dispositivo") : "";
+                String marcaModelo = rs.getString("marca_modelo") != null ? rs.getString("marca_modelo") : "";
+                String equipoDesc = (dispositivo + " " + marcaModelo).trim();
+
+                StringBuilder msg = new StringBuilder();
+                msg.append("Hola, excelente día.\n\n");
+
+                if (equipoDesc.isEmpty()) {
+                    msg.append("Le escribo de LUMTECH para darle una breve actualización sobre su equipo.\n\n");
+                } else {
+                    msg.append("Le escribo de LUMTECH para darle una breve actualización sobre su equipo (").append(equipoDesc).append(").\n\n");
                 }
-                Desktop.getDesktop().browse(new URI("https://wa.me/52" + tel + "?text=" + URLEncoder.encode(msg, StandardCharsets.UTF_8)));
+
+                // Lógica de mensajes según el estado
+                if ("LISTO".equalsIgnoreCase(est)) {
+                    double saldo = rs.getDouble("costo_estimado") - rs.getDouble("anticipo");
+                    msg.append("¡Su equipo ya está *LISTO* para entrega!\n");
+                    msg.append("El saldo pendiente a liquidar es de: *$").append(saldo).append("*\n\n");
+                    msg.append("Cualquier duda, quedo a sus órdenes.");
+                }
+                else if ("EN ESPERA".equalsIgnoreCase(est) || "RETRASADO".equalsIgnoreCase(est)) {
+                    // Tu mensaje directo y sin paja
+                    msg.append("Seguimos en espera de la pieza, y nos notificaron que llegaría el día [JUEVES]. En cuanto nos llegue la pieza física, realizaremos el ensamble.\n\n");
+                    msg.append("¿Me podría proporcionar su contraseña o PIN de inicio de sesión de Windows?\n\n");
+                    msg.append("Quedo a la espera de su respuesta, ¡gracias!");
+                }
+                else {
+                    msg.append("El estado actual de su orden #").append(id).append(" es: *").append(est).append("*.\n\n");
+                    msg.append("En un momento le envío por este medio el documento PDF con los detalles.\n");
+                    msg.append("¡Gracias por su preferencia!");
+                }
+
+                // Abrir WhatsApp
+                String url = "https://wa.me/52" + tel + "?text=" + URLEncoder.encode(msg.toString(), StandardCharsets.UTF_8);
+                Desktop.getDesktop().browse(new URI(url));
+
+                // Abrir Carpeta de PDFs (Asegúrate de que esta ruta sea la correcta en tu Ubuntu)
+                String rutaCarpetaPDFs = System.getProperty("user.home") + "/Documentos/Lumtech/Ordenes";
+                File carpeta = new File(rutaCarpetaPDFs);
+
+                if (carpeta.exists() && Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
+                    Desktop.getDesktop().open(carpeta);
+                }
             }
         } catch (Exception e) {
             e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Error al enviar WhatsApp: " + e.getMessage());
         }
     }
+
     private void cargarOrdenes(String filtro) {
         modeloOrdenes.setRowCount(0);
         String sql = "SELECT o.id, c.nombre, c.telefono, o.dispositivo, o.estado, o.fecha_recepcion FROM ordenes_servicio o JOIN clientes c ON o.id_cliente=c.id ";

@@ -1,5 +1,6 @@
 package ui.ventanas;
 
+import com.formdev.flatlaf.FlatDarkLaf;
 import config.Sesion;
 import servicios.BackupManager;
 import servicios.LoggerPro;
@@ -218,11 +219,18 @@ public class SistemaPOS extends JFrame {
     }
 
     public static void main(String[] args) {
-
+        // 1. Configurar zona horaria
         java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/Mexico_City"));
 
+        // 2. Instalar el Look and Feel de FlatLaf ANTES de cualquier otra cosa
+        try {
+            FlatDarkLaf.setup();
+        } catch (Exception e) {
+            System.err.println("Error al iniciar FlatLaf");
+        }
+
+        // 3. Iniciar la aplicación
         SwingUtilities.invokeLater(() -> {
-            try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); } catch (Exception e) {}
             ImpresoraTicket.cargarConfiguracionInicial();
             new Login().setVisible(true);
         });

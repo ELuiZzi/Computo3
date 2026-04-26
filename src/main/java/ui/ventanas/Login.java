@@ -175,7 +175,9 @@ public class Login extends JFrame {
 
     // Método main para probar solo el login (Opcional, usaremos el de ui.ventanas.SistemaPOS)
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new Login().setVisible(true));
+
+        SwingUtilities.invokeLater(() -> new Login().setVisible(true)
+        );
     }
 
     // Método para leer la sesión guardada e iniciar automáticamente
