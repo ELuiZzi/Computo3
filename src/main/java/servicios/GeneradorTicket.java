@@ -18,7 +18,14 @@ public class GeneradorTicket {
         }
     }
 
+    // 1. MÉTODO ORIGINAL (Se queda igual para no romper tus ventas normales)
+    // Llama al método nuevo, indicando que NO es refacción por defecto (false)
     public static String crearTicket(int idVenta, String fechaStr, List<ItemTicket> items, double totalVenta) {
+        return crearTicket(idVenta, fechaStr, items, totalVenta, false);
+    }
+
+    // 2. NUEVO MÉTODO MAESTRO (Acepta el booleano 'esRefaccion')
+    public static String crearTicket(int idVenta, String fechaStr, List<ItemTicket> items, double totalVenta, boolean esRefaccion) {
         StringBuilder sb = new StringBuilder();
 
         // Formato de fecha para el texto visible
@@ -40,16 +47,15 @@ public class GeneradorTicket {
 
         // --- PRODUCTOS CON SALTO DE LÍNEA ---
         for (ItemTicket item : items) {
-            // Ancho máximo para la columna nombre (13 caracteres)
             List<String> lineasNombre = dividirTexto(item.nombre, 13);
 
-            // Primera línea: Lleva Nombre, Cantidad y Subtotal
+            // Primera línea
             sb.append(String.format("%-13s %3d %9.2f\n",
                     lineasNombre.get(0),
                     item.cantidad,
                     item.subtotal));
 
-            // Líneas siguientes: Solo llevan el resto del nombre (Indentado)
+            // Líneas siguientes
             for (int i = 1; i < lineasNombre.size(); i++) {
                 sb.append(String.format("%-13s\n", lineasNombre.get(i)));
             }
@@ -63,6 +69,19 @@ public class GeneradorTicket {
         sb.append(String.format("TOTAL:         $%8.2f\n", totalVenta));
         sb.append("============================\n");
 
+        // --- NUEVO: LÓGICA CONDICIONAL PARA TÉRMINOS ---
+        if (esRefaccion) {
+            sb.append("\n");
+            sb.append("   TÉRMINOS Y CONDICIONES   \n");
+            sb.append("1. Esta refacción cuenta con\n");
+            sb.append("   30 días de garantía por  \n");
+            sb.append("   defectos de fábrica.     \n");
+            sb.append("2. Indispensable presentar  \n");
+            sb.append("   este ticket para hacer   \n");
+            sb.append("   válida la garantía.      \n");
+            sb.append("----------------------------\n");
+        }
+
         sb.append("   ¡Gracias por su compra!  \n");
         sb.append("\n");
         sb.append("     ¿REQUIERE FACTURA?     \n");
@@ -72,28 +91,42 @@ public class GeneradorTicket {
         sb.append("\n"); // Espacio antes del código
 
         // --- GENERAR DATOS PARA CÓDIGO DE BARRAS ---
-        // Formato: Venta + Fecha compacta (ddMM) + Hora (HHmm)
-        // Ejemplo: 5722121030 (Folio 57, 22 Dic, 10:30 am)
-        // Code39 se hace muy ancho rápido, mantenlo lo más corto posible.
         SimpleDateFormat sdfBarra = new SimpleDateFormat("ddMMHHmm");
         String fechaBarra = sdfBarra.format(new Date());
         String dataBarra = idVenta + "-" + fechaBarra;
 
-        // ETIQUETA ESPECIAL PARA INTERCEPTAR EN IMPRESORA
         sb.append("<<<BARCODE:").append(dataBarra).append(">>>");
 
         return sb.toString();
     }
 
+    // 3. MÉTODO PARA TICKETS DE ANTICIPOS (Para no inflar las cuentas de finanzas)
+    public static String crearTicketAnticipo(int idOrden, String cliente, double totalPieza, double anticipoDejado) {
+        StringBuilder sb = new StringBuilder();
+        double saldoRestante = totalPieza - anticipoDejado;
+
+        sb.append("===========LUMTECH==========\n");
+        sb.append("COMPROBANTE DE ANTICIPO\n");
+        sb.append("Orden Serv: ").append(idOrden).append("\n");
+        sb.append("Cliente: ").append(cliente).append("\n");
+        sb.append("----------------------------\n");
+        sb.append(String.format("Costo Total:   $%8.2f\n", totalPieza));
+        sb.append(String.format("Anticipo:      $%8.2f\n", anticipoDejado));
+        sb.append("============================\n");
+        sb.append(String.format("RESTA A PAGAR: $%8.2f\n", saldoRestante));
+        sb.append("============================\n");
+        sb.append("\nConserve este ticket para\n");
+        sb.append("liquidar y recoger su equipo.\n\n");
+        return sb.toString();
+    }
+
     private static List<String> dividirTexto(String texto, int largoMax) {
         List<String> lineas = new ArrayList<>();
-        // Si cabe, retornamos directo
         if (texto.length() <= largoMax) {
             lineas.add(texto);
             return lineas;
         }
 
-        // Lógica de división
         String[] palabras = texto.split(" ");
         StringBuilder lineaActual = new StringBuilder();
 
@@ -102,12 +135,10 @@ public class GeneradorTicket {
                 if (lineaActual.length() > 0) lineaActual.append(" ");
                 lineaActual.append(palabra);
             } else {
-                // La línea se llenó
                 if (lineaActual.length() > 0) {
                     lineas.add(lineaActual.toString());
                     lineaActual = new StringBuilder();
                 }
-                // Si la palabra sola es más larga que el máximo, la cortamos a la fuerza
                 if (palabra.length() > largoMax) {
                     String restante = palabra;
                     while (restante.length() > largoMax) {
@@ -124,5 +155,4 @@ public class GeneradorTicket {
 
         return lineas;
     }
-
 }

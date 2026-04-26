@@ -404,6 +404,8 @@ public class PanelVentas extends JPanel {
                 JOptionPanePro.mostrarMensaje(this, "Venta Exitosa", "Ticket generado.\nImpresión automática deshabilitada.", "INFO");
             }
 
+            // Notificar a Telegram
+            servicios.NotificadorTelegram.notificarVentaNueva(totalVenta);
 
 
             modeloCarrito.setRowCount(0);

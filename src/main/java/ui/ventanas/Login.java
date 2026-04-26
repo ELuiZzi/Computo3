@@ -3,6 +3,7 @@ package ui.ventanas;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.io.File;
 import java.sql.*;
 
 import util.Estilos;
@@ -114,8 +115,13 @@ public class Login extends JFrame {
         panelPrincipal.add(pHeader, BorderLayout.NORTH);
         panelPrincipal.add(pForm, BorderLayout.CENTER);
         panelPrincipal.add(pSur, BorderLayout.SOUTH);
-
         add(panelPrincipal);
+
+        // --- LLAMAR AL GENERADOR ANTES DEL AUTO LOGIN ---
+        inicializarConfiguracion();
+
+        // --- NUEVO: Intentar iniciar sesión automáticamente ---
+        SwingUtilities.invokeLater(this::intentarAutoLogin);
     }
 
     private void abrirVentaRapida() {
@@ -146,10 +152,15 @@ public class Login extends JFrame {
                 String rol = rs.getString("rol");
                 String genero = rs.getString("genero");
 
-                // Guardar datos en Sesión Global
-                Sesion.usuarioActual = user; // Guardamos tal cual lo escribió
+                Sesion.usuarioActual = user;
                 Sesion.rolActual = rol;
-                Sesion.generoActual = (genero != null) ? genero : "M"; // Protección null
+                Sesion.generoActual = (genero != null) ? genero : "M";
+
+                // --- NUEVO: Guardar credenciales codificadas para auto-login ---
+                actualizarProperties("session.user", user);
+                String passCodificada = java.util.Base64.getEncoder().encodeToString(pass.getBytes());
+                actualizarProperties("session.pass", passCodificada);
+                // -------------------------------------------------------------
 
                 new SistemaPOS(rol).setVisible(true);
                 this.dispose();
@@ -166,4 +177,82 @@ public class Login extends JFrame {
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> new Login().setVisible(true));
     }
+
+    // Método para leer la sesión guardada e iniciar automáticamente
+    private void intentarAutoLogin() {
+        try {
+            File configFile = new File("config.properties");
+            if (configFile.exists()) {
+                java.util.Properties props = new java.util.Properties();
+                try (java.io.FileInputStream fis = new java.io.FileInputStream(configFile)) {
+                    props.load(fis);
+                    String u = props.getProperty("session.user");
+                    String p = props.getProperty("session.pass");
+
+                    if (u != null && p != null && !u.isEmpty() && !p.isEmpty()) {
+                        // Decodificar contraseña y llenar los campos
+                        String passDecodificada = new String(java.util.Base64.getDecoder().decode(p));
+                        txtUsuario.setText(u);
+                        txtPassword.setText(passDecodificada);
+
+                        // Ocultar la ventana de login mientras carga
+                        this.setVisible(false);
+                        validarIngreso();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("No hay sesión guardada o hubo un error al leerla.");
+        }
+    }
+
+    // Helper para guardar en properties sin borrar la configuración de la DB o impresora
+    private void actualizarProperties(String key, String value) {
+        java.util.Properties props = new java.util.Properties();
+        File archivo = new File("config.properties");
+        if (archivo.exists()) {
+            try (java.io.FileInputStream fis = new java.io.FileInputStream(archivo)) {
+                props.load(fis);
+            } catch (Exception e) {}
+        }
+        props.setProperty(key, value);
+        try (java.io.FileOutputStream fos = new java.io.FileOutputStream(archivo)) {
+            props.store(fos, "Configuracion Sistema POS");
+        } catch (Exception e) {}
+    }
+
+    // --- NUEVO: Generador automático de plantilla config.properties ---
+    private void inicializarConfiguracion() {
+        java.io.File configFile = new java.io.File("config.properties");
+        java.util.Properties props = new java.util.Properties();
+
+        // 1. Cargar el archivo si ya existe para no borrar lo que ya está configurado
+        if (configFile.exists()) {
+            try (java.io.FileInputStream fis = new java.io.FileInputStream(configFile)) {
+                props.load(fis);
+            } catch (Exception e) {}
+        }
+
+        // 2. putIfAbsent agregará la variable SOLO si no existe actualmente
+        props.putIfAbsent("db.ip", "localhost");
+        props.putIfAbsent("db.port", "3306");
+        props.putIfAbsent("db.user", "root");
+        props.putIfAbsent("db.password", "");
+        props.putIfAbsent("db.name", "punto_venta");
+        props.putIfAbsent("db.dump_path", "C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysqldump.exe");
+
+        props.putIfAbsent("ticket.impresora", "");
+        props.putIfAbsent("ticket.auto_imprimir", "false");
+
+        props.putIfAbsent("ui.pestaña_inicial", "INICIO");
+
+        props.putIfAbsent("telegram.token", "");
+        props.putIfAbsent("telegram.chat_id", "");
+
+        // 3. Guardar el archivo actualizado
+        try (java.io.FileOutputStream fos = new java.io.FileOutputStream(configFile)) {
+            props.store(fos, "Configuracion Sistema POS");
+        } catch (Exception e) {}
+    }
+
 }

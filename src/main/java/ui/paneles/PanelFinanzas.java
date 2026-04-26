@@ -535,4 +535,13 @@ public class PanelFinanzas extends JPanel {
             }
         }
     }
+
+    public void limpiarDatos() {
+        modeloMaestro.setRowCount(0);
+        modeloDetalle.setRowCount(0);
+        lblVentas.setText("Ventas Mes: $0.00");
+        lblGanancias.setText("Ganancia Mes: $0.00");
+        panelGraficaBarras.setDatos(new double[12]);
+        panelPastel.setDatos(0, 0);
+    }
 }

@@ -3,6 +3,7 @@ package ui.paneles;
 
 
 import config.ConexionBD;
+import servicios.DialogoServicioRapido;
 import servicios.GeneradorPDF;
 import servicios.GeneradorTicket;
 import servicios.ImpresoraTicket;
@@ -94,7 +95,11 @@ public class PanelServicios extends JPanel {
         pBtnsTop.setBackground(Estilos.COLOR_FONDO);
 
         // 1. Botón Servicio Rápido (Nuevo)
-        BotonPro btnRapido = new BotonPro("⚡ Servicio Rápido", new Color(255, 140, 0), this::servicioRapido);
+        BotonPro btnRapido = new BotonPro("SERVICIO RÁPIDO", new Color(41, 128, 185), () -> {
+            // Abrir el diálogo modal
+            JFrame topFrame = (JFrame) SwingUtilities.getWindowAncestor(this);
+            new DialogoServicioRapido(topFrame).setVisible(true);
+        });
 
         // 2. Botón Nueva Orden (Ahora VERDE)
         BotonPro btnNuevo = new BotonPro("NUEVA ORDEN", "mas.png", new Color(46, 204, 113), () -> mostrarFormulario(-1));
@@ -683,42 +688,7 @@ public class PanelServicios extends JPanel {
         } catch (Exception e) { e.printStackTrace(); }
     }
 
-    // --- SERVICIO RÁPIDO ---
-    private void servicioRapido() {
-        // Diálogo simple personalizado
-        JPanel panel = new JPanel(new GridLayout(2, 2, 5, 5));
-        JTextField txtConcepto = new JTextField();
-        JTextField txtMonto = new JTextField();
-        panel.add(new JLabel("Concepto:")); panel.add(txtConcepto);
-        panel.add(new JLabel("Costo Total:")); panel.add(txtMonto);
 
-        int res = JOptionPane.showConfirmDialog(this, panel, "Servicio Rápido (Mostrador)", JOptionPane.OK_CANCEL_OPTION);
-        if (res == JOptionPane.OK_OPTION) {
-            try {
-                String concepto = txtConcepto.getText().toUpperCase();
-                double monto = Double.parseDouble(txtMonto.getText());
-
-                try (Connection conn = ConexionBD.conectar()) {
-                    conn.setAutoCommit(false);
-                    // Insertar Venta SIN orden de servicio vinculada (NULL)
-                    PreparedStatement ps = conn.prepareStatement("INSERT INTO ventas (total_venta, ganancia_total, tipo_venta) VALUES (?, ?, 'SERVICIO')", Statement.RETURN_GENERATED_KEYS);
-                    ps.setDouble(1, monto); ps.setDouble(2, monto); ps.executeUpdate();
-                    ResultSet rs = ps.getGeneratedKeys(); rs.next(); int idVenta = rs.getInt(1);
-
-                    PreparedStatement psD = conn.prepareStatement("INSERT INTO detalle_venta (id_venta, id_producto, cantidad, subtotal, descripcion) VALUES (?, NULL, 1, ?, ?)");
-                    psD.setInt(1, idVenta); psD.setDouble(2, monto); psD.setString(3, concepto); psD.executeUpdate();
-                    conn.commit();
-
-                    if (ImpresoraTicket.isAutoImprimir()) {
-                        List<GeneradorTicket.ItemTicket> items = new ArrayList<>();
-                        items.add(new GeneradorTicket.ItemTicket(concepto, 1, monto));
-                        ImpresoraTicket.imprimir(GeneradorTicket.crearTicket(idVenta, null, items, monto));
-                    }
-                    JOptionPanePro.mostrarMensaje(this, "Venta Rápida", "Registrada con éxito.", "INFO");
-                }
-            } catch(Exception e) { JOptionPanePro.mostrarMensaje(this, "Error", "Datos inválidos", "ERROR"); }
-        }
-    }
 
     // --- MÉTODOS AUXILIARES ---
     // (Iguales a la versión anterior: guardarOrden, generarPDF, enviarWhatsApp, cargarOrdenes, getters/setters visuales)

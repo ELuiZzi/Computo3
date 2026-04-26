@@ -95,17 +95,47 @@ public class SistemaPOS extends JFrame {
         tabs.setIconAt(indexConfig, Recursos.getIcono("tuerca.png"));
         tabs.setToolTipTextAt(indexConfig, "Configuración del Sistema");
 
+// --- DETECTAR CAMBIO DE PESTAÑA Y DAR FOCO / SEGURIDAD ---
+        final int[] pestanaAnterior = {0}; // Para recordar dónde estábamos
 
-        // --- DETECTAR CAMBIO DE PESTAÑA Y DAR FOCO ---
         tabs.addChangeListener(e -> {
             Component c = tabs.getSelectedComponent();
+            int indiceActual = tabs.getSelectedIndex();
+            Component prev = tabs.getComponentAt(pestanaAnterior[0]);
+
+            // --- NUEVO: Si la pestaña anterior era Finanzas, borrar sus datos por privacidad ---
+            if (prev instanceof PanelFinanzas && c != prev) {
+                ((PanelFinanzas)prev).limpiarDatos();
+            }
+            // 1. SEGURIDAD: Verificar si es un área restringida
+            if(c instanceof PanelFinanzas || c instanceof PanelConfiguracion) {
+                JPasswordField pf = new JPasswordField();
+                int option = JOptionPane.showConfirmDialog(this, pf,
+                        "Área Restringida. Confirma tu contraseña:",
+                        JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
+
+                if (option == JOptionPane.OK_OPTION) {
+                    String passIngresada = new String(pf.getPassword());
+                    if (validarContrasenaEnBD(passIngresada)) {
+                        pestanaAnterior[0] = indiceActual; // Acceso concedido, actualizar historial
+                    } else {
+                        JOptionPanePro.mostrarMensaje(this, "Error", "Contraseña incorrecta.", "ERROR");
+                        tabs.setSelectedIndex(pestanaAnterior[0]); // Rechazado, regresar
+                        return;
+                    }
+                } else {
+                    tabs.setSelectedIndex(pestanaAnterior[0]); // Canceló, regresar
+                    return;
+                }
+            } else {
+                pestanaAnterior[0] = indiceActual; // Es un panel libre, actualizamos historial
+            }
+
+            // 2. LÓGICA DE FOCOS Y CARGAS (Tu código original)
             if(c == pVentas) { pVentas.cargarCatalogo(); pVentas.darFocoCodigo(); }
             else if(c instanceof PanelFaltantes) ((PanelFaltantes)c).cargarFaltantes();
             else if(c instanceof PanelFinanzas) ((PanelFinanzas)c).consultar();
-                // Refrescar dashboard al volver a Inicio
             else if(c instanceof PanelDashboard) {
-                // Truco: Reemplazar el panel dashboard por uno nuevo para actualizar datos
-                // O mejor, agregar un método public void refrescar() en PanelDashboard y llamarlo.
                 tabs.setComponentAt(0, new PanelDashboard());
             }
         });
@@ -122,6 +152,22 @@ public class SistemaPOS extends JFrame {
 
         // Agregamos el botón en la capa PALETTE (Arriba)
         layeredPane.add(btnCerrarSesion, JLayeredPane.PALETTE_LAYER);
+
+// --- NUEVO: Leer pestaña por defecto desde config.properties ---
+        java.util.Properties props = new java.util.Properties();
+        try (java.io.FileInputStream fis = new java.io.FileInputStream("config.properties")) {
+            props.load(fis);
+            String tabInicial = props.getProperty("ui.pestaña_inicial", "INICIO");
+
+            for(int i = 0; i < tabs.getTabCount(); i++) {
+                if(tabs.getTitleAt(i).equalsIgnoreCase(tabInicial)) {
+                    tabs.setSelectedIndex(i);
+                    break;
+                }
+            }
+        } catch (Exception ex) {
+            // Si falla, se queda en el índice 0 (INICIO) por defecto
+        }
 
         // Agregamos el LayeredPane a la ventana
         setContentPane(layeredPane);
@@ -152,6 +198,17 @@ public class SistemaPOS extends JFrame {
         if (confirmar) {
             LoggerPro.registrar("LOGIN", "Cierre de sesión: " + Sesion.usuarioActual);
 
+            // --- NUEVO: Borrar sesión del archivo de configuración ---
+            java.util.Properties props = new java.util.Properties();
+            java.io.File archivo = new java.io.File("config.properties");
+            if (archivo.exists()) {
+                try (java.io.FileInputStream fis = new java.io.FileInputStream(archivo)) { props.load(fis); } catch(Exception ex){}
+            }
+            props.remove("session.user");
+            props.remove("session.pass");
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(archivo)) { props.store(fos, "Configuracion Sistema POS"); } catch(Exception ex){}
+            // ---------------------------------------------------------
+
             // Cerrar esta ventana
             this.dispose();
 
@@ -161,10 +218,27 @@ public class SistemaPOS extends JFrame {
     }
 
     public static void main(String[] args) {
+
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/Mexico_City"));
+
         SwingUtilities.invokeLater(() -> {
             try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); } catch (Exception e) {}
             ImpresoraTicket.cargarConfiguracionInicial();
             new Login().setVisible(true);
         });
+    }
+
+    private boolean validarContrasenaEnBD(String password) {
+        try (java.sql.Connection conn = config.ConexionBD.conectar()) {
+            String sql = "SELECT 1 FROM usuarios_sistema WHERE usuario = ? AND password = ?";
+            java.sql.PreparedStatement ps = conn.prepareStatement(sql);
+            ps.setString(1, Sesion.usuarioActual);
+            ps.setString(2, password);
+            java.sql.ResultSet rs = ps.executeQuery();
+            return rs.next(); // Si devuelve un registro, la contraseña es correcta
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            return false;
+        }
     }
 }

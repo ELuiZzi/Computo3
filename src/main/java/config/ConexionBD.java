@@ -47,7 +47,7 @@ public class ConexionBD {
         }
 
         // 3. CONSTRUIR LA URL DINÁMICA
-        String url = "jdbc:mysql://" + ip + ":" + puerto + "/" + db;
+        String url = "jdbc:mysql://" + ip + ":" + puerto + "/" + db + "?serverTimezone=America/Mexico_City";
 
         try {
             return DriverManager.getConnection(url, user, pass);

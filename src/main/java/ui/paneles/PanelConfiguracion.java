@@ -1,6 +1,5 @@
 package ui.paneles;
 
-
 import config.ConexionBD;
 import config.Sesion;
 import servicios.ImpresoraTicket;
@@ -8,7 +7,6 @@ import ui.componentes.*;
 import util.*;
 
 import javax.swing.*;
-
 import java.awt.*;
 import java.io.*;
 import java.sql.Connection;
@@ -32,17 +30,24 @@ public class PanelConfiguracion extends JPanel {
     private JPasswordField txtDbPass;
     private JTextField txtRutaDump;
 
+    // Componentes Nuevo Usuario (Admin)
+    private JTextField txtNuevoUser;
+    private JPasswordField txtNuevoPass;
+    private JComboBox<String> cmbNuevoRol;
+    private JComboBox<String> cmbNuevoGenero;
+
     public PanelConfiguracion(String rolUsuario) {
         setLayout(new BorderLayout());
         setBackground(Estilos.COLOR_FONDO);
 
-        // Usaremos Tabs internos para organizar mejor
         TabbedPanePro tabsConfig = new TabbedPanePro();
 
         tabsConfig.addTab("IMPRESIÓN", crearPanelImpresora());
         tabsConfig.addTab("MI PERFIL", crearPanelPerfil());
+
         if ("ADMIN".equals(rolUsuario)) {
             tabsConfig.addTab("BASE DE DATOS", crearPanelBD());
+            tabsConfig.addTab("USUARIOS", crearPanelUsuarios()); // <-- NUEVA PESTAÑA
         }
 
         add(tabsConfig, BorderLayout.CENTER);
@@ -82,7 +87,6 @@ public class PanelConfiguracion extends JPanel {
         txtMiPass = new JPasswordField(15); Estilos.estilizarInput(txtMiPass);
         cmbMiGenero = new JComboBox<>(new String[]{"Masculino", "Femenino"});
 
-        // Cargar datos actuales en los campos
         txtMiUsuario.setText(Sesion.usuarioActual);
         cmbMiGenero.setSelectedIndex("F".equals(Sesion.generoActual) ? 1 : 0);
 
@@ -103,12 +107,9 @@ public class PanelConfiguracion extends JPanel {
         GridBagConstraints g = new GridBagConstraints();
         g.insets = new Insets(10,10,10,10); g.fill = GridBagConstraints.HORIZONTAL;
 
-        txtDbIp = input();
-        txtDbPuerto = input();
-        txtDbUser = input();
+        txtDbIp = input(); txtDbPuerto = input(); txtDbUser = input();
         txtDbPass = new JPasswordField(15); Estilos.estilizarInput(txtDbPass);
 
-        // Campo Nuevo para la ruta
         txtRutaDump = input();
         BotonPro btnBuscarDump = new BotonPro("", "folder.png", Estilos.COLOR_INPUT, this::buscarMysqlDump);
         btnBuscarDump.setPreferredSize(new Dimension(40, 30));
@@ -122,12 +123,33 @@ public class PanelConfiguracion extends JPanel {
         addLbl(p, g, 0, 1, "Puerto (3306):"); g.gridx=1; p.add(txtDbPuerto, g);
         addLbl(p, g, 0, 2, "Usuario BD:"); g.gridx=1; p.add(txtDbUser, g);
         addLbl(p, g, 0, 3, "Contraseña BD:"); g.gridx=1; p.add(txtDbPass, g);
-
-        // Agregar visualmente el nuevo campo
         addLbl(p, g, 0, 4, "Ruta mysqldump:"); g.gridx=1; p.add(pDump, g);
 
         BotonPro btnSaveBD = new BotonPro("Guardar Conexión", Color.ORANGE, this::guardarConfigBD);
         g.gridx=0; g.gridy=5; g.gridwidth=2; p.add(btnSaveBD, g);
+
+        return p;
+    }
+
+    // --- TAB 4: NUEVO USUARIO (SOLO ADMIN) ---
+    private JPanel crearPanelUsuarios() {
+        JPanel p = new JPanel(new GridBagLayout());
+        p.setBackground(Estilos.COLOR_PANEL);
+        GridBagConstraints g = new GridBagConstraints();
+        g.insets = new Insets(10,10,10,10); g.fill = GridBagConstraints.HORIZONTAL;
+
+        txtNuevoUser = input();
+        txtNuevoPass = new JPasswordField(15); Estilos.estilizarInput(txtNuevoPass);
+        cmbNuevoRol = new JComboBox<>(new String[]{"CAJERO", "ADMIN"});
+        cmbNuevoGenero = new JComboBox<>(new String[]{"Masculino", "Femenino"});
+
+        addLbl(p, g, 0, 0, "Usuario:"); g.gridx=1; p.add(txtNuevoUser, g);
+        addLbl(p, g, 0, 1, "Contraseña:"); g.gridx=1; p.add(txtNuevoPass, g);
+        addLbl(p, g, 0, 2, "Rol en Sistema:"); g.gridx=1; p.add(cmbNuevoRol, g);
+        addLbl(p, g, 0, 3, "Género:"); g.gridx=1; p.add(cmbNuevoGenero, g);
+
+        BotonPro btnCrear = new BotonPro("Crear Nuevo Usuario", new Color(41, 128, 185), this::guardarNuevoUsuario);
+        g.gridx=0; g.gridy=4; g.gridwidth=2; p.add(btnCrear, g);
 
         return p;
     }
@@ -137,42 +159,33 @@ public class PanelConfiguracion extends JPanel {
     // ==========================================
 
     private void cargarConfiguracionGlobal() {
-        // 1. Cargar Impresoras Disponibles
         List<String> impresoras = ImpresoraTicket.obtenerImpresorasDisponibles();
         cmbImpresora.removeAllItems();
         for (String imp : impresoras) cmbImpresora.addItem(imp);
 
-        // 2. Leer config.properties
         File configFile = new File("config.properties");
         if (configFile.exists()) {
             Properties props = new Properties();
             try (FileInputStream fis = new FileInputStream(configFile)) {
                 props.load(fis);
-
-                // Impresora
                 String impGuardada = props.getProperty("ticket.impresora");
                 if(impGuardada != null) cmbImpresora.setSelectedItem(impGuardada);
                 chkAutoImprimir.setSelected(Boolean.parseBoolean(props.getProperty("ticket.auto_imprimir", "true")));
 
-                // BD
                 txtDbIp.setText(props.getProperty("db.ip", "localhost"));
                 txtDbPuerto.setText(props.getProperty("db.port", "3306"));
                 txtDbUser.setText(props.getProperty("db.user", "root"));
-                txtDbPass.setText(props.getProperty("db.password", "")); // Cuidado con passwords planos
+                txtDbPass.setText(props.getProperty("db.password", ""));
                 txtRutaDump.setText(props.getProperty("db.dump_path", ""));
-
-            } catch (Exception e) { e.printStackTrace(); }
+            } catch (Exception e) {}
         }
     }
 
     private void guardarConfigImpresora() {
         actualizarProperties("ticket.impresora", (String) cmbImpresora.getSelectedItem());
         actualizarProperties("ticket.auto_imprimir", String.valueOf(chkAutoImprimir.isSelected()));
-
-        // Actualizar en caliente
         ImpresoraTicket.setImpresora((String) cmbImpresora.getSelectedItem());
         ImpresoraTicket.setAutoImprimir(chkAutoImprimir.isSelected());
-
         JOptionPanePro.mostrarMensaje(this, "Guardado", "Configuración de impresión actualizada.", "INFO");
     }
 
@@ -196,69 +209,78 @@ public class PanelConfiguracion extends JPanel {
         }
 
         try (Connection conn = ConexionBD.conectar()) {
-            // Validar que el usuario no exista (si se cambió el nombre)
-            if (!nuevoUser.equals(Sesion.usuarioActual)) {
-                // ... lógica check existe ...
-            }
-
-            // Actualizar en BD (Usando el usuario actual de la sesión para el WHERE)
             String sql = "UPDATE usuarios_sistema SET usuario = ?, password = ?, genero = ? WHERE usuario = ?";
             PreparedStatement ps = conn.prepareStatement(sql);
             ps.setString(1, nuevoUser);
             ps.setString(2, nuevoPass);
             ps.setString(3, nuevoGenero);
-            ps.setString(4, Sesion.usuarioActual); // El usuario viejo para encontrar el registro
+            ps.setString(4, Sesion.usuarioActual);
 
-            int affected = ps.executeUpdate();
-
-            if (affected > 0) {
-                // Actualizar Sesión
+            if (ps.executeUpdate() > 0) {
                 Sesion.usuarioActual = nuevoUser;
                 Sesion.generoActual = nuevoGenero;
+
+                // Si cambiamos el usuario actual, también actualizamos el properties para no romper el auto-login
+                actualizarProperties("session.user", nuevoUser);
+                actualizarProperties("session.pass", java.util.Base64.getEncoder().encodeToString(nuevoPass.getBytes()));
+
                 JOptionPanePro.mostrarMensaje(this, "Éxito", "Perfil actualizado correctamente.", "INFO");
             } else {
                 JOptionPanePro.mostrarMensaje(this, "Error", "No se pudo actualizar el perfil.", "ERROR");
             }
         } catch (Exception e) {
-            e.printStackTrace();
             JOptionPanePro.mostrarMensaje(this, "Error BD", e.getMessage(), "ERROR");
         }
     }
 
-    // Helper para guardar en properties sin borrar lo demás
+    private void guardarNuevoUsuario() {
+        String u = txtNuevoUser.getText().trim();
+        String p = new String(txtNuevoPass.getPassword()).trim();
+        String r = cmbNuevoRol.getSelectedItem().toString();
+        String gen = cmbNuevoGenero.getSelectedIndex() == 0 ? "M" : "F";
+
+        if (u.isEmpty() || p.isEmpty()) {
+            JOptionPanePro.mostrarMensaje(this, "Aviso", "Llene todos los campos para crear al usuario.", "ADVERTENCIA");
+            return;
+        }
+
+        try (Connection conn = ConexionBD.conectar()) {
+            String sql = "INSERT INTO usuarios_sistema (usuario, password, rol, genero) VALUES (?, ?, ?, ?)";
+            PreparedStatement ps = conn.prepareStatement(sql);
+            ps.setString(1, u);
+            ps.setString(2, p);
+            ps.setString(3, r);
+            ps.setString(4, gen);
+            ps.executeUpdate();
+
+            JOptionPanePro.mostrarMensaje(this, "Éxito", "El usuario '" + u + "' ha sido creado.", "INFO");
+            txtNuevoUser.setText("");
+            txtNuevoPass.setText("");
+        } catch (Exception e) {
+            JOptionPanePro.mostrarMensaje(this, "Error", "Error al crear: Probablemente el usuario ya existe.\nDetalle: " + e.getMessage(), "ERROR");
+        }
+    }
+
     private void actualizarProperties(String key, String value) {
         Properties props = new Properties();
         File archivo = new File("config.properties");
-
-        // 1. Cargar existente
         if (archivo.exists()) {
-            try (FileInputStream fis = new FileInputStream(archivo)) {
-                props.load(fis);
-            } catch (IOException e) { e.printStackTrace(); }
+            try (FileInputStream fis = new FileInputStream(archivo)) { props.load(fis); } catch (Exception e) {}
         }
-
-        // 2. Modificar
         props.setProperty(key, value);
-
-        // 3. Guardar
-        try (FileOutputStream fos = new FileOutputStream(archivo)) {
-            props.store(fos, "Configuracion Sistema POS");
-        } catch (IOException e) { e.printStackTrace(); }
+        try (FileOutputStream fos = new FileOutputStream(archivo)) { props.store(fos, "Configuracion Sistema POS"); } catch (Exception e) {}
     }
 
     private void buscarMysqlDump() {
         JFileChooser fc = new JFileChooser();
         fc.setDialogTitle("Buscar mysqldump.exe (Carpeta bin de MySQL)");
-        // Intentar buscar en rutas comunes para ayudar al usuario
         File rutaComun = new File("C:\\Program Files\\MySQL");
         if(rutaComun.exists()) fc.setCurrentDirectory(rutaComun);
-
         if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             txtRutaDump.setText(fc.getSelectedFile().getAbsolutePath());
         }
     }
 
-    // Helpers UI
     private JTextField input() { JTextField t = new JTextField(15); Estilos.estilizarInput(t); return t; }
     private void addLbl(JPanel p, GridBagConstraints g, int x, int y, String t) { g.gridx=x; g.gridy=y; JLabel l=new JLabel(t); l.setForeground(Color.WHITE); p.add(l,g); }
 }
