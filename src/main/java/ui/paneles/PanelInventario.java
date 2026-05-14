@@ -323,45 +323,81 @@ public class PanelInventario extends JPanel {
     private void filtrarInventario() {
         String texto = txtBuscar.getText().trim();
 
-        // Si está vacío, cargamos todo normal
+        // Si está vacío, cargamos todo normal (cargarTabla ya usa SwingWorker)
         if (texto.isEmpty()) {
             cargarTabla();
             return;
         }
 
-        modelo.setRowCount(0); // Limpiar tabla
-        try (Connection conn = ConexionBD.conectar()) {
-            // LÓGICA SQL:
-            // 1. (codigo_barras = ?) -> Búsqueda exacta y prioritaria.
-            // 2. OR (nombre LIKE ?) -> Búsqueda parcial.
-            // 3. AND activo = 1 -> Solo productos no eliminados.
-            String sql = "SELECT * FROM productos WHERE " +
-                    "(codigo_barras = ? " +
-                    " OR id IN (SELECT id_producto FROM codigos_adicionales WHERE codigo = ?) " +
-                    " OR nombre LIKE ?) " +
-                    "AND activo = 1";
+        // Limpiamos la tabla en el hilo principal (EDT) antes de buscar
+        modelo.setRowCount(0);
 
-            PreparedStatement ps = conn.prepareStatement(sql);
-            ps.setString(1, texto);
-            ps.setString(2, texto);
-            ps.setString(3, "%" + texto + "%");
+        SwingWorker<List<Object[]>, Void> worker = new SwingWorker<>() {
 
-            ResultSet rs = ps.executeQuery();
+            @Override
+            protected List<Object[]> doInBackground() throws Exception {
+                List<Object[]> listaTemporal = new java.util.ArrayList<>();
 
-            boolean hayResultados = false;
-            while (rs.next()) {
-                hayResultados = true;
-                modelo.addRow(new Object[]{rs.getInt("id"), rs.getString("nombre"), rs.getString("marca"), rs.getDouble("precio"), rs.getInt("stock")});
+                // OPTIMIZACIÓN: Pedir solo las 5 columnas que usa la tabla
+                String sql = "SELECT id, nombre, marca, precio, stock FROM productos WHERE " +
+                        "(codigo_barras = ? " +
+                        " OR id IN (SELECT id_producto FROM codigos_adicionales WHERE codigo = ?) " +
+                        " OR nombre LIKE ?) " +
+                        "AND activo = 1";
+
+                try (Connection conn = ConexionBD.conectar();
+                     PreparedStatement ps = conn.prepareStatement(sql)) {
+
+                    ps.setString(1, texto);
+                    ps.setString(2, texto);
+                    ps.setString(3, "%" + texto + "%");
+
+                    // Try-with-resources anidado para asegurar la destrucción del ResultSet
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            listaTemporal.add(new Object[]{
+                                    rs.getInt("id"),
+                                    rs.getString("nombre"),
+                                    rs.getString("marca"),
+                                    rs.getDouble("precio"),
+                                    rs.getInt("stock")
+                            });
+                        }
+                    }
+                }
+                return listaTemporal;
             }
 
-            if (!hayResultados) {
-                JOptionPanePro.mostrarMensaje(this, "Sin Resultados", "No se encontró ningún producto con: " + texto, "INFO");
-                // Opcional: cargarTabla(); si quieres resetear
-            }
+            @Override
+            protected void done() {
+                // Hilo de la Interfaz: Seguro para actualizar UI
+                try {
+                    List<Object[]> filas = get();
 
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+                    if (filas.isEmpty()) {
+                        JOptionPanePro.mostrarMensaje(PanelInventario.this, "Sin Resultados", "No se encontró ningún producto con: " + texto, "INFO");
+                    } else {
+                        // Agregar todo de golpe
+                        for (Object[] fila : filas) {
+                            modelo.addRow(fila);
+                        }
+
+                        // Reajustar tamaños de columna
+                        if (tabla.getColumnModel().getColumnCount() > 0) {
+                            tabla.getColumnModel().getColumn(0).setMinWidth(40);
+                            tabla.getColumnModel().getColumn(0).setMaxWidth(60);
+                            tabla.getColumnModel().getColumn(0).setPreferredWidth(50);
+                            tabla.getColumnModel().getColumn(1).setPreferredWidth(300);
+                        }
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    JOptionPanePro.mostrarMensaje(PanelInventario.this, "Error", "Ocurrió un error durante la búsqueda.", "ERROR");
+                }
+            }
+        };
+
+        worker.execute();
     }
 
     // --- LÓGICA AUTOMÁTICA ---
@@ -638,25 +674,63 @@ public class PanelInventario extends JPanel {
     }
 
     private void cargarTabla() {
+        // 1. Limpiamos la tabla en el hilo principal antes de empezar
         modelo.setRowCount(0);
-        try (Connection c = ConexionBD.conectar(); Statement s = c.createStatement()) {
-            ResultSet rs = s.executeQuery("SELECT * FROM productos WHERE activo=1");
-            while (rs.next()) {
-                modelo.addRow(new Object[]{rs.getInt("id"), rs.getString("nombre"), rs.getString("marca"), rs.getDouble("precio"), rs.getInt("stock")});
+
+        // (Opcional) Podrías poner un texto de "Cargando..." en algún label aquí
+
+        SwingWorker<List<Object[]>, Void> worker = new SwingWorker<>() {
+
+            @Override
+            protected List<Object[]> doInBackground() throws Exception {
+                // ESTO OCURRE EN SEGUNDO PLANO (No congela la app)
+                List<Object[]> listaTemporal = new java.util.ArrayList<>();
+                String sql = "SELECT id, nombre, marca, precio, stock FROM productos WHERE activo=1";
+
+                try (Connection c = ConexionBD.conectar();
+                     Statement s = c.createStatement();
+                     ResultSet rs = s.executeQuery(sql)) {
+
+                    while (rs.next()) {
+                        listaTemporal.add(new Object[]{
+                                rs.getInt("id"),
+                                rs.getString("nombre"),
+                                rs.getString("marca"),
+                                rs.getDouble("precio"),
+                                rs.getInt("stock")
+                        });
+                    }
+                }
+                return listaTemporal; // Pasamos los datos al método done()
             }
-        } catch (Exception e) {
-        }
 
-        // AJUSTAR TAMAÑOS (Solo funciona después de cargar o inicializar)
-        if (tabla.getColumnModel().getColumnCount() > 0) {
-            // ID pequeño
-            tabla.getColumnModel().getColumn(0).setMinWidth(40);
-            tabla.getColumnModel().getColumn(0).setMaxWidth(60);
-            tabla.getColumnModel().getColumn(0).setPreferredWidth(50);
+            @Override
+            protected void done() {
+                // ESTO OCURRE EN EL HILO DE LA INTERFAZ (Seguro para tocar componentes)
+                try {
+                    List<Object[]> filas = get(); // Recuperamos lo que devolvió doInBackground()
 
-            // Nombre grande
-            tabla.getColumnModel().getColumn(1).setPreferredWidth(300);
-        }
+                    // Agregamos todas las filas de golpe
+                    for (Object[] fila : filas) {
+                        modelo.addRow(fila);
+                    }
+
+                    // Ajustar tamaños de columna después de cargar los datos
+                    if (tabla.getColumnModel().getColumnCount() > 0) {
+                        tabla.getColumnModel().getColumn(0).setMinWidth(40);
+                        tabla.getColumnModel().getColumn(0).setMaxWidth(60);
+                        tabla.getColumnModel().getColumn(0).setPreferredWidth(50);
+                        tabla.getColumnModel().getColumn(1).setPreferredWidth(300);
+                    }
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    JOptionPanePro.mostrarMensaje(PanelInventario.this, "Error", "No se pudo cargar el inventario.", "ERROR");
+                }
+            }
+        };
+
+        worker.execute(); // ¡Inicia el hilo!
     }
 
     private void imprimirEtiquetaSeleccionada() {

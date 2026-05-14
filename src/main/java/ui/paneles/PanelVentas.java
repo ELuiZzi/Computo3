@@ -29,6 +29,13 @@ public class PanelVentas extends JPanel {
     private final JLabel lblTotal;
     private double totalVenta = 0;
     private double gananciaVenta = 0;
+    private final BotonPro btnPagar;
+
+    private int paginaActual = 1;
+    private final int LIMITE_PAGINA = 20; // Cambia este número según qué tan grande quieras el catálogo
+    private BotonPro btnPaginaAnt;
+    private BotonPro btnPaginaSig;
+    private JLabel lblPaginaActual;
 
     public PanelVentas() {
         setLayout(new BorderLayout());
@@ -66,8 +73,30 @@ public class PanelVentas extends JPanel {
         scrollCat.setBorder(null);
         scrollCat.getViewport().setBackground(Estilos.COLOR_FONDO);
 
+        scrollCat.getVerticalScrollBar().setUnitIncrement(30); // 30 es ideal, puedes subirlo a 40 si lo quieres más rápido
+
         panelIzq.add(panelBus, BorderLayout.NORTH);
         panelIzq.add(scrollCat, BorderLayout.CENTER);
+
+        // --- NUEVO: PANEL DE PAGINACIÓN ---
+        JPanel panelPaginacion = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 10));
+        panelPaginacion.setBackground(Estilos.COLOR_FONDO);
+
+        btnPaginaAnt = new BotonPro("< Anterior", Estilos.COLOR_PANEL, () -> cambiarPagina(-1));
+        btnPaginaSig = new BotonPro("Siguiente >", Estilos.COLOR_PANEL, () -> cambiarPagina(1));
+        btnPaginaAnt.setPreferredSize(new Dimension(120, 35));
+        btnPaginaSig.setPreferredSize(new Dimension(120, 35));
+
+        lblPaginaActual = new JLabel("Página 1");
+        lblPaginaActual.setForeground(Color.WHITE);
+        lblPaginaActual.setFont(Estilos.FONT_BOLD);
+
+        panelPaginacion.add(btnPaginaAnt);
+        panelPaginacion.add(lblPaginaActual);
+        panelPaginacion.add(btnPaginaSig);
+
+        // Agregamos la paginación a la parte inferior del lado izquierdo
+        panelIzq.add(panelPaginacion, BorderLayout.SOUTH);
 
         // --- DERECHA: CARRITO (30%) ---
         JPanel panelDer = new JPanel(new BorderLayout());
@@ -123,7 +152,7 @@ public class PanelVentas extends JPanel {
         lblTotal.setFont(new Font("Segoe UI", Font.BOLD, 36));
         lblTotal.setForeground(Color.WHITE);
 
-        BotonPro btnPagar = new BotonPro("Vender", "vender.png", Estilos.COLOR_FONDO, () -> finalizarVenta());
+        btnPagar = new BotonPro("Vender", "vender.png", Estilos.COLOR_FONDO, () -> finalizarVenta());
         btnPagar.setFont(new Font("Segoe UI", Font.BOLD, 20));
         btnPagar.setPreferredSize(new Dimension(0, 60));
 
@@ -191,37 +220,69 @@ public class PanelVentas extends JPanel {
     public void darFocoCodigo() {
         SwingUtilities.invokeLater(() -> txtCodigo.requestFocusInWindow());
     }
+    private void cambiarPagina(int delta) {
+        int nuevaPagina = paginaActual + delta;
+        if (nuevaPagina < 1) return; // No permitir páginas negativas
+
+        paginaActual = nuevaPagina;
+        lblPaginaActual.setText("Página " + paginaActual);
+        cargarCatalogo();
+    }
 
     public void cargarCatalogo() {
         panelCatalogo.removeAll();
-        try (Connection conn = ConexionBD.conectar(); Statement stmt = conn.createStatement()) {
-            // QUERY MEJORADA: Ordena por cantidad vendida (Descendente)
-            String sql = "SELECT p.*, COALESCE(SUM(d.cantidad), 0) as vendidos " + "FROM productos p " + "LEFT JOIN detalle_venta d ON p.id = d.id_producto " + "WHERE p.stock > 0 AND p.activo = 1 " + "GROUP BY p.id " + "ORDER BY vendidos DESC";
+        btnPaginaAnt.setEnabled(paginaActual > 1); // Solo se activa si no estamos en la pag 1
 
-            ResultSet rs = stmt.executeQuery(sql);
+        try (Connection conn = ConexionBD.conectar()) {
+            // QUERY OPTIMIZADA CON LIMIT Y OFFSET
+            String sql = "SELECT p.*, COALESCE(SUM(d.cantidad), 0) as vendidos " +
+                    "FROM productos p " +
+                    "LEFT JOIN detalle_venta d ON p.id = d.id_producto " +
+                    "WHERE p.stock > 0 AND p.activo = 1 " +
+                    "GROUP BY p.id " +
+                    "ORDER BY vendidos DESC " +
+                    "LIMIT ? OFFSET ?";
+
+            PreparedStatement ps = conn.prepareStatement(sql);
+            ps.setInt(1, LIMITE_PAGINA);
+
+            // Si estamos en pag 1, offset es 0. Si pag 2 (con limite 40), offset es 40.
+            int offset = (paginaActual - 1) * LIMITE_PAGINA;
+            ps.setInt(2, offset);
+
+            ResultSet rs = ps.executeQuery();
+
+            int contadorProductos = 0;
+
             while (rs.next()) {
+                contadorProductos++;
                 int id = rs.getInt("id");
                 String nom = rs.getString("nombre");
                 double pre = rs.getDouble("precio");
+                double costo = rs.getDouble("costo");
                 String marca = rs.getString("marca");
-                String modelo = rs.getString("modelo"); // Nuevo
-                int stock = rs.getInt("stock");         // Nuevo
+                String modelo = rs.getString("modelo");
+                int stock = rs.getInt("stock");
 
-                // Diseño de Tarjeta de Producto (Tipo Botón)
-                BotonPro btnProducto = new BotonPro("", Estilos.COLOR_PANEL, () -> agregarAlCarrito(id));
-// Como ui.componentes.BotonPro usa GridBagLayout centrado, para replicar el HTML multilínea
-// tendríamos que modificar un poco ui.componentes.BotonPro o simplemente añadir un JLabel con HTML al ui.componentes.BotonPro.
+                BotonPro btnProducto = new BotonPro("", Estilos.COLOR_PANEL, () -> agregarAlCarrito(id, nom, pre, costo, stock));
 
-
-                // HTML para formatear el texto dentro del botón
-                String html = "<html><body style='padding: 5px; text-align: left; color: white;'>" + "<div style='font-size: 14px; font-weight: bold; width: 120px;'>" + nom + "</div>" + "<div style='color: #b0b8c4; font-size: 10px;'>" + (marca != null ? marca : "") + " " + (modelo != null ? modelo : "") + "</div>" + "<div style='margin-top: 6px; color: #ff2959; font-size: 11px; font-weight: bold;'>$" + pre + "</div>" + "<div style='color: #4cd964; font-size: 10px;'>Stock: " + stock + "</div>" + "</body></html>";
+                String html = "<html><body style='padding: 5px; text-align: left; color: white;'>" +
+                        "<div style='font-size: 14px; font-weight: bold; width: 120px;'>" + nom + "</div>" +
+                        "<div style='color: #b0b8c4; font-size: 10px;'>" + (marca != null ? marca : "") + " " + (modelo != null ? modelo : "") + "</div>" +
+                        "<div style='margin-top: 6px; color: #ff2959; font-size: 11px; font-weight: bold;'>$" + pre + "</div>" +
+                        "<div style='color: #4cd964; font-size: 10px;'>Stock: " + stock + "</div>" +
+                        "</body></html>";
                 JLabel lblInfo = new JLabel(html);
                 btnProducto.add(lblInfo);
                 panelCatalogo.add(btnProducto);
-
             }
+
+            // Si la consulta devolvió menos productos que el límite, significa que ya no hay más páginas
+            btnPaginaSig.setEnabled(contadorProductos == LIMITE_PAGINA);
+
             panelCatalogo.revalidate();
             panelCatalogo.repaint();
+
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -238,7 +299,14 @@ public class PanelVentas extends JPanel {
 
             ResultSet rs = ps.executeQuery();
             if (rs.next()) {
-                agregarAlCarrito(rs.getInt("id"));
+                // Pasamos todos los datos directo de la consulta
+                agregarAlCarrito(
+                        rs.getInt("id"),
+                        rs.getString("nombre"),
+                        rs.getDouble("precio"),
+                        rs.getDouble("costo"),
+                        rs.getInt("stock")
+                );
             }
             else {
                 JOptionPanePro.mostrarMensaje(this, "Error", "Producto no Encontrado", "ERROR");
@@ -250,47 +318,32 @@ public class PanelVentas extends JPanel {
         }
     }
 
-    private void agregarAlCarrito(int id) {
-        try (Connection conn = ConexionBD.conectar()) {
-            PreparedStatement ps = conn.prepareStatement("SELECT * FROM productos WHERE id = ?");
-            ps.setInt(1, id);
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
-                int stockReal = rs.getInt("stock");
-                String nombre = rs.getString("nombre");
+    private void agregarAlCarrito(int id, String nombre, double precio, double costo, int stockReal) {
+        // ¡CERO CONSULTAS A LA BASE DE DATOS AQUÍ!
 
-                // Verificar cuánto llevamos en el carrito
-                int cantidadEnCarrito = 0;
-                int rowExistente = -1;
+        int cantidadEnCarrito = 0;
+        int rowExistente = -1;
 
-                for (int i = 0; i < modeloCarrito.getRowCount(); i++) {
-                    if (Integer.parseInt(modeloCarrito.getValueAt(i, 0).toString()) == id) {
-
-                        cantidadEnCarrito = Integer.parseInt(modeloCarrito.getValueAt(i, 2).toString());
-                        rowExistente = i;
-                        break;
-                    }
-                }
-
-                // VALIDACIÓN DE STOCK ESTRICTA
-                if ((cantidadEnCarrito + 1) > stockReal) {
-                    JOptionPanePro.mostrarMensaje(this, "Stock Insuficiente",
-                            "Solo quedan " + stockReal + " unidades de " + nombre, "ADVERTENCIA");
-                    return; // DETIENE EL PROCESO
-                }
-
-                double precio = rs.getDouble("precio");
-                double costo = rs.getDouble("costo");
-
-                if(rowExistente != -1) {
-                    modCantidadEnFila(rowExistente, 1); // Este método también debe validarse
-                } else {
-                    modeloCarrito.addRow(new Object[]{id, nombre, 1, precio, precio, precio-costo});
-                    calcularTotal();
-                }
+        for (int i = 0; i < modeloCarrito.getRowCount(); i++) {
+            if (Integer.parseInt(modeloCarrito.getValueAt(i, 0).toString()) == id) {
+                cantidadEnCarrito = Integer.parseInt(modeloCarrito.getValueAt(i, 2).toString());
+                rowExistente = i;
+                break;
             }
-        } catch (Exception e) {
-            e.printStackTrace();
+        }
+
+        // VALIDACIÓN DE STOCK ESTRICTA
+        if ((cantidadEnCarrito + 1) > stockReal) {
+            JOptionPanePro.mostrarMensaje(this, "Stock Insuficiente",
+                    "Solo quedan " + stockReal + " unidades de " + nombre, "ADVERTENCIA");
+            return;
+        }
+
+        if(rowExistente != -1) {
+            modCantidadEnFila(rowExistente, 1);
+        } else {
+            modeloCarrito.addRow(new Object[]{id, nombre, 1, precio, precio, precio - costo});
+            calcularTotal();
         }
     }
 
@@ -338,85 +391,122 @@ public class PanelVentas extends JPanel {
 
     private void finalizarVenta() {
         if (totalVenta == 0) return;
-        // ... (Misma lógica de guardado a BD que tenías antes) ...
-        // Simulado para brevedad visual:
-        try (Connection conn = ConexionBD.conectar()) {
-            conn.setAutoCommit(false);
 
-            PreparedStatement psV = conn.prepareStatement("INSERT INTO ventas (total_venta, ganancia_total, tipo_venta) VALUES (?, ?, 'PRODUCTO')", Statement.RETURN_GENERATED_KEYS);
-            psV.setDouble(1, totalVenta);
-            psV.setDouble(2, gananciaVenta);
-            psV.executeUpdate();
+        // Deshabilitar el botón de venta aquí para evitar doble clic
+        btnPagar.setEnabled(false);
+        btnPagar.setTexto("Procesando...");
 
-            ResultSet rs = psV.getGeneratedKeys();
-            rs.next();
-            int idVenta = rs.getInt(1);
-
-            // Preparar lista para el ticket
-            List<GeneradorTicket.ItemTicket> listaTicket = new ArrayList<>();
-
-            PreparedStatement psD = conn.prepareStatement("INSERT INTO detalle_venta (id_venta, id_producto, cantidad, subtotal) VALUES (?,?,?,?)");
-            PreparedStatement psS = conn.prepareStatement("UPDATE productos SET stock = stock - ?, cantidad_faltante = cantidad_faltante + ?, fecha_faltante = NOW() WHERE id = ?");
-
-            for (int i = 0; i < modeloCarrito.getRowCount(); i++) {
-                int idProd = Integer.parseInt(modeloCarrito.getValueAt(i, 0).toString());
-                String nombreProd = modeloCarrito.getValueAt(i, 1).toString();
-                int cant = Integer.parseInt(modeloCarrito.getValueAt(i, 2).toString());
-                double sub = Double.parseDouble(modeloCarrito.getValueAt(i, 4).toString());
-
-                // BD
-                // Batch Detalle
-                psD.setInt(1, idVenta); psD.setInt(2, idProd); psD.setInt(3, cant); psD.setDouble(4, sub);
-                psD.addBatch();
-
-                // Batch Stock + Faltante
-                psS.setInt(1, cant); // Restar al stock
-                psS.setInt(2, cant); // SUMAR a cantidad_faltante (acumular pedido)
-                psS.setInt(3, idProd); // ID
-                psS.addBatch();
-
-                // Ticket
-                listaTicket.add(new GeneradorTicket.ItemTicket(nombreProd, cant, sub));
-            }
-            psD.executeBatch();
-            psS.executeBatch();
-            conn.commit();
-
-
-            // GENERAR EL TEXTO DEL TICKET
-            String ticket = GeneradorTicket.crearTicket(idVenta, null, listaTicket, totalVenta);
-            System.out.println(ticket);
-
-
-
-
-
-            // 2. VERIFICAR SI SE DEBE IMPRIMIR
-            if (ImpresoraTicket.isAutoImprimir()) {
-                ImpresoraTicket.imprimir(ticket); // ENVÍA A LA IMPRESORA REAL
-                ToastPro.show("Venta Finalizada \n" +
-                        "No olvides la bolsita", "EXITO");
-            } else {
-                // Si no es auto, podemos mostrarlo en consola o en un JTextArea
-                System.out.println("--- Ticket Generado (Impresión Deshabilitada) ---");
-                System.out.println(ticket);
-                System.out.println("--------------------------------------------------");
-                JOptionPanePro.mostrarMensaje(this, "Venta Exitosa", "Ticket generado.\nImpresión automática deshabilitada.", "INFO");
-            }
-
-            // Notificar a Telegram
-            servicios.NotificadorTelegram.notificarVentaNueva(totalVenta);
-
-
-            modeloCarrito.setRowCount(0);
-            calcularTotal();
-            cargarCatalogo();
-            darFocoCodigo();
-        } catch (Exception e) {
-            e.printStackTrace();
+        // 1. EXTRAER DATOS DE LA UI ANTES DE ENTRAR AL HILO
+        // Es regla de oro no leer componentes gráficos dentro de doInBackground
+        List<Object[]> datosCarrito = new ArrayList<>();
+        for (int i = 0; i < modeloCarrito.getRowCount(); i++) {
+            datosCarrito.add(new Object[]{
+                    modeloCarrito.getValueAt(i, 0), // id
+                    modeloCarrito.getValueAt(i, 1), // nombre
+                    modeloCarrito.getValueAt(i, 2), // cantidad
+                    modeloCarrito.getValueAt(i, 4)  // subtotal
+            });
         }
 
+        final double totalFinal = totalVenta;
+        final double gananciaFinal = gananciaVenta;
 
+
+
+        SwingWorker<Boolean, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Boolean doInBackground() throws Exception {
+                // 2. TODO EL TRABAJO PESADO EN SEGUNDO PLANO
+                try (Connection conn = ConexionBD.conectar()) {
+                    conn.setAutoCommit(false);
+
+                    // Insertar Venta
+                    PreparedStatement psV = conn.prepareStatement("INSERT INTO ventas (total_venta, ganancia_total, tipo_venta) VALUES (?, ?, 'PRODUCTO')", Statement.RETURN_GENERATED_KEYS);
+                    psV.setDouble(1, totalFinal);
+                    psV.setDouble(2, gananciaFinal);
+                    psV.executeUpdate();
+
+                    ResultSet rs = psV.getGeneratedKeys();
+                    rs.next();
+                    int idVenta = rs.getInt(1);
+
+                    List<GeneradorTicket.ItemTicket> listaTicket = new ArrayList<>();
+                    PreparedStatement psD = conn.prepareStatement("INSERT INTO detalle_venta (id_venta, id_producto, cantidad, subtotal) VALUES (?,?,?,?)");
+                    PreparedStatement psS = conn.prepareStatement("UPDATE productos SET stock = stock - ?, cantidad_faltante = cantidad_faltante + ?, fecha_faltante = NOW() WHERE id = ?");
+
+                    // Usar los datos extraídos previamente
+                    for (Object[] fila : datosCarrito) {
+                        int idProd = Integer.parseInt(fila[0].toString());
+                        String nombreProd = fila[1].toString();
+                        int cant = Integer.parseInt(fila[2].toString());
+                        double sub = Double.parseDouble(fila[3].toString());
+
+                        // Batch Detalle
+                        psD.setInt(1, idVenta); psD.setInt(2, idProd); psD.setInt(3, cant); psD.setDouble(4, sub);
+                        psD.addBatch();
+
+                        // Batch Stock
+                        psS.setInt(1, cant); psS.setInt(2, cant); psS.setInt(3, idProd);
+                        psS.addBatch();
+
+                        listaTicket.add(new GeneradorTicket.ItemTicket(nombreProd, cant, sub));
+                    }
+                    psD.executeBatch();
+                    psS.executeBatch();
+                    conn.commit();
+
+                    // Generar Ticket String
+                    String ticket = GeneradorTicket.crearTicket(idVenta, null, listaTicket, totalFinal);
+
+                    // IMPRESIÓN (OPERACIÓN PESADA 1)
+                    if (ImpresoraTicket.isAutoImprimir()) {
+                        ImpresoraTicket.imprimir(ticket);
+                    } else {
+                        System.out.println("--- Ticket Generado --- \n" + ticket);
+                    }
+
+                    // TELEGRAM (OPERACIÓN PESADA 2 - RED)
+                    servicios.NotificadorTelegram.notificarVentaNueva(totalFinal);
+
+                    return true; // Éxito
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    return false; // Falló
+                }
+            }
+
+            @Override
+            protected void done() {
+                // 3. ACTUALIZAR LA INTERFAZ CUANDO TODO TERMINE
+                try {
+                    boolean exito = get();
+                    if (exito) {
+                        if (ImpresoraTicket.isAutoImprimir()) {
+                            ToastPro.show("Venta Finalizada \nNo olvides la bolsita", "EXITO");
+                        } else {
+                            JOptionPanePro.mostrarMensaje(PanelVentas.this, "Venta Exitosa", "Ticket generado.\nImpresión automática deshabilitada.", "INFO");
+                        }
+
+                        // Limpiar UI
+                        modeloCarrito.setRowCount(0);
+                        calcularTotal();
+                        cargarCatalogo(); // Recarga el inventario visual
+                        darFocoCodigo();
+                    } else {
+                        JOptionPanePro.mostrarMensaje(PanelVentas.this, "Error de Venta", "Ocurrió un problema guardando la venta.", "ERROR");
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    JOptionPanePro.mostrarMensaje(PanelVentas.this, "Error Crítico", "Fallo inesperado al procesar la venta.", "ERROR");
+
+                }finally {
+                    btnPagar.setEnabled(true);
+                    btnPagar.setTexto("Vender");
+                }
+            }
+        };
+
+        worker.execute();
     }
 
     //Método Auxiliar para consultar Stock en BD

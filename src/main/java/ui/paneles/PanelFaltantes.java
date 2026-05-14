@@ -8,6 +8,7 @@ import util.*;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableRowSorter;
 import java.awt.*;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -60,11 +61,36 @@ public class PanelFaltantes extends JPanel {
         // --- TABLA ---
         // Agregamos columna Fecha (Opcional, para ver cuándo cayó en faltante)
         modelo = new DefaultTableModel(new String[]{"ID", "Producto", "Modelo", "Marca", "Prov.", "Stock", "POR PEDIR", "CostoHide", "Fecha Reg."}, 0) {
+            @Override
             public boolean isCellEditable(int row, int col) { return false; }
+
+            // Ayudamos al Sorter a entender qué tipo de dato hay en cada columna
+            @Override
+            public Class<?> getColumnClass(int columnIndex) {
+                if (columnIndex == 0 || columnIndex == 5) return Integer.class; // ID y Stock
+                if (columnIndex == 7) return Double.class; // Costo
+                if (columnIndex == 8) return java.sql.Timestamp.class; // Fecha
+                return String.class; // El resto
+            }
         };
 
         tabla = new TablaPro(modelo);
         Estilos.estilizarTabla(tabla);
+
+        // --- NUEVO: SORTER PARA ORDENAMIENTO ---
+        TableRowSorter<DefaultTableModel> sorter = new TableRowSorter<>(modelo);
+        tabla.setRowSorter(sorter);
+
+        // Comparador especial para extraer el número de la columna "POR PEDIR" (índice 6)
+        sorter.setComparator(6, (String s1, String s2) -> {
+            try {
+                int v1 = Integer.parseInt(s1.replace(" Pzas", "").trim());
+                int v2 = Integer.parseInt(s2.replace(" Pzas", "").trim());
+                return Integer.compare(v1, v2);
+            } catch (NumberFormatException ex) {
+                return 0; // Si algo falla, los considera iguales
+            }
+        });
 
         JPopupMenu popup = new JPopupMenu();
         JMenuItem itemCopiar = new JMenuItem("Copiar Modelo");

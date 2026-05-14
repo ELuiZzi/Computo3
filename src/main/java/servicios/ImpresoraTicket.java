@@ -46,6 +46,7 @@ public class ImpresoraTicket {
     }
 
     // --- MÉTODO PRINCIPAL DE IMPRESIÓN ---
+    // --- MÉTODO PRINCIPAL DE IMPRESIÓN ---
     public static void imprimir(String textoTicket) {
         if (impresoraSeleccionada == null || impresoraSeleccionada.isEmpty()) {
             JOptionPanePro.mostrarMensaje(null, "Aviso", "Configura la impresora primero.", "ADVERTENCIA");
@@ -53,7 +54,6 @@ public class ImpresoraTicket {
         }
 
         try {
-            // 1. Buscar servicio
             PrintService servicio = null;
             PrintService[] services = PrinterJob.lookupPrintServices();
             for (PrintService s : services) {
@@ -71,31 +71,49 @@ public class ImpresoraTicket {
             PrinterJob job = PrinterJob.getPrinterJob();
             job.setPrintService(servicio);
 
-            // 2. CONFIGURACIÓN EXACTA DEL PAPEL (55mm)
+            // ==========================================
+            // CÁLCULO DINÁMICO DE LA ALTURA DEL TICKET
+            // ==========================================
+            int alturaCalculada = 0;
+
+            // 1. Sumar altura del logo (si existe)
+            java.io.File logoFile = new java.io.File("recursos/logo.png");
+            if (logoFile.exists()) {
+                alturaCalculada += 70; // 60 de alto + 10 de margen
+            }
+
+            // 2. Sumar altura del texto y códigos de barras
+            String[] lineas = textoTicket.split("\n");
+            int altoLineaTexto = 11; // Altura promedio de fuente Consolas a 9pt
+
+            for (String linea : lineas) {
+                if (linea.startsWith("<<<BARCODE:") && linea.endsWith(">>>")) {
+                    alturaCalculada += 50; // Espacio que ocupa el bloque del código de barras
+                } else {
+                    alturaCalculada += altoLineaTexto; // Espacio de una línea de texto normal
+                }
+            }
+
+            // 3. Añadir margen inferior de seguridad para el corte (evita cortar letras a la mitad)
+            alturaCalculada += 40;
+
+            // ==========================================
+
             PageFormat pf = new PageFormat();
             Paper paper = new Paper();
 
-            // Conversión: 55mm / 25.4 * 72 DPI = ~156 puntos.
-            // Le damos 155 para asegurar que entre.
-            // Altura 3000 para simular rollo continuo.
-            double width = 155;
-            double height = 3000;
+            double width = 155; // 55mm exactos
+            double height = alturaCalculada; // ALTURA DINÁMICA APLICADA
 
             paper.setSize(width, height);
-
-            // Márgenes en 0 absoluto para que el driver controle el resto
             paper.setImageableArea(0, 0, width, height);
 
             pf.setPaper(paper);
             pf.setOrientation(PageFormat.PORTRAIT);
 
-            // Validar el PageFormat con el trabajo actual (Esto ayuda a que el driver lo acepte)
             PageFormat validatePage = job.validatePage(pf);
 
-            // 3. Asignar contenido
             job.setPrintable(new TicketPrintable(textoTicket), validatePage);
-
-            // 4. Imprimir sin diálogo
             job.print();
 
         } catch (PrinterException e) {
@@ -125,32 +143,23 @@ public class ImpresoraTicket {
 
             // 1. LOGO (Igual que antes)
             try {
-                ImageIcon icon = new ImageIcon("recursos/logo.png");
-                Image img = icon.getImage();
-                int logoAncho = 60;
-                int logoAlto = 60;
-                int xLogo = (138 - logoAncho) / 2;
-                g2d.drawImage(img, xLogo, 0, logoAncho, logoAlto, null);
-                y = logoAlto + 10;
+                Image img = util.CacheRecursos.getLogoTicket();
+                if (img != null) {
+                    int logoAncho = 60;
+                    int logoAlto = 60;
+                    int xLogo = (138 - logoAncho) / 2;
+                    g2d.drawImage(img, xLogo, 0, logoAncho, logoAlto, null);
+                    y = logoAlto + 10;
+                }
             } catch (Exception e) {}
 
             // 2. PREPARAR FUENTES
             Font fontTexto = new Font("Consolas", Font.PLAIN, 9);
             Font fontNegrita = new Font("Consolas", Font.BOLD, 10);
-            Font fontBarra = null;
 
             // Cargar Fuente Code39
-            try {
-                // Ajusta la ruta si es necesario. "recursos/fuentes/code39.ttf"
-                File fileFont = new File("recursos/fuentes/code39.ttf");
-                if (fileFont.exists()) {
-                    fontBarra = Font.createFont(Font.TRUETYPE_FONT, fileFont).deriveFont(24f); // Tamaño grande para el código
-                } else {
-                    fontBarra = new Font("Serif", Font.PLAIN, 20); // Fallback
-                }
-            } catch (Exception e) {
-                fontBarra = new Font("Serif", Font.PLAIN, 20);
-            }
+            // FUENTE DE BARRAS (DESDE CACHÉ RAM)
+            Font fontBarra = util.CacheRecursos.getFuenteCodigoBarras();
 
             g2d.setColor(Color.BLACK);
             int lineHeight = g2d.getFontMetrics(fontTexto).getHeight();
