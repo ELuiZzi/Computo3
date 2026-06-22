@@ -6,7 +6,7 @@
 
     <groupId>org.example</groupId>
     <artifactId>Computo2</artifactId>
-    <version>1.1.5</version>
+    <version>1.1.8</version>
 
     <build>
         <finalName>Computo2</finalName>
@@ -65,6 +65,11 @@
             <groupId>com.zaxxer</groupId>
             <artifactId>HikariCP</artifactId>
             <version>5.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>2.0.30</version>
         </dependency>
     </dependencies>
 

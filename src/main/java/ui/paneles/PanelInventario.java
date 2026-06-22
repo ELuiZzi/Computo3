@@ -238,6 +238,10 @@ public class PanelInventario extends JPanel {
 
         BotonPro btnBuscar = new BotonPro("IR", Estilos.COLOR_ACCENT, this::filtrarInventario);
         BotonPro btnTodo = new BotonPro("TODO", Color.DARK_GRAY, this::cargarTabla);
+        BotonPro btnNuevoProducto = new BotonPro("+ NUEVO PRODUCTO", new Color(46, 204, 113), () -> {
+            // Aquí llamaremos al futuro DialogoProducto
+            JOptionPanePro.mostrarMensaje(this, "Próximamente", "Abrirá la ventana del formulario completo.", "INFO");
+        });
 
         // --- AQUÍ MOVIMOS EL BOTÓN ELIMINAR ---
         BotonPro btnEliminar = new BotonPro("ELIMINAR SELECCIONADO", new Color(200, 50, 50), this::eliminar);
@@ -246,9 +250,10 @@ public class PanelInventario extends JPanel {
         panelHerramientas.add(txtBuscar);
         panelHerramientas.add(btnBuscar);
         panelHerramientas.add(btnTodo);
-        // Separador visual para alejar el botón eliminar
-        panelHerramientas.add(Box.createHorizontalStrut(30));
-        panelHerramientas.add(btnEliminar);
+        panelHerramientas.add(Box.createHorizontalStrut(15));
+        panelHerramientas.add(btnNuevoProducto);
+        panelHerramientas.add(Box.createHorizontalStrut(15));
+        panelHerramientas.add(btnEliminar);;
 
 
 
@@ -259,7 +264,7 @@ public class PanelInventario extends JPanel {
             }
         };
         tabla = new TablaPro(modelo);
-        Estilos.estilizarTabla(tabla);
+
 
         // --- MENÚ CONTEXTUAL ---
         JPopupMenu popupMenu = new JPopupMenu();
@@ -296,11 +301,7 @@ public class PanelInventario extends JPanel {
         panelCentral.add(panelHerramientas, BorderLayout.NORTH);
         panelCentral.add(new JScrollPane(tabla), BorderLayout.CENTER);
 
-
-
-        add(panelNorteGlobal, BorderLayout.NORTH);
         add(panelCentral, BorderLayout.CENTER); // Antes agregabas solo el JScrollPane, ahora el panelCentral
-
 
         cargarProveedores();
         cargarCombos();

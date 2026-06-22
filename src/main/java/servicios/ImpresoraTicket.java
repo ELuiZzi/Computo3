@@ -1,214 +1,157 @@
 package servicios;
 
-import javax.print.PrintService;
-import java.awt.*;
-import java.awt.print.*;
 import java.io.File;
 import java.io.FileInputStream;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import java.util.Properties;
-import ui.componentes.JOptionPanePro;
-import javax.swing.ImageIcon;
 
 public class ImpresoraTicket {
 
-    private static String impresoraSeleccionada = null;
+    // Ahora la variable maestra es la IP
+    public static String ipImpresora = "192.168.100.85"; // IP por defecto por si falla el config
     private static boolean autoImprimir = true;
 
-    // --- CONFIGURACIÓN ---
-    public static void setImpresora(String impresora) { impresoraSeleccionada = impresora; }
-    public static void setAutoImprimir(boolean valor) { autoImprimir = valor; }
+    // --- MÉTODOS DE CONFIGURACIÓN ---
     public static boolean isAutoImprimir() { return autoImprimir; }
+    public static void setAutoImprimir(boolean auto) { autoImprimir = auto; }
+    public static void setIpImpresora(String ip) { ipImpresora = ip; }
 
     public static void cargarConfiguracionInicial() {
-        try {
-            File configFile = new File("config.properties");
-            if (configFile.exists()) {
+        File configFile = new File("config.properties");
+        if (configFile.exists()) {
+            try (FileInputStream fis = new FileInputStream(configFile)) {
                 Properties props = new Properties();
-                try (FileInputStream fis = new FileInputStream(configFile)) {
-                    props.load(fis);
-                    impresoraSeleccionada = props.getProperty("ticket.impresora");
-                    autoImprimir = Boolean.parseBoolean(props.getProperty("ticket.auto_imprimir", "true"));
-                    System.out.println("Imp: " + impresoraSeleccionada);
+                props.load(fis);
+
+                // Leemos la IP desde el archivo
+                String ipGuardada = props.getProperty("ticket.ip_impresora");
+                if (ipGuardada != null && !ipGuardada.trim().isEmpty()) {
+                    ipImpresora = ipGuardada;
                 }
+
+                String autoImp = props.getProperty("ticket.auto_imprimir");
+                if (autoImp != null) {
+                    autoImprimir = Boolean.parseBoolean(autoImp);
+                }
+            } catch (Exception e) {
+                System.err.println("Error al cargar configuración de red: " + e.getMessage());
             }
-        } catch (Exception e) {}
+        }
     }
 
-    public static List<String> obtenerImpresorasDisponibles() {
-        List<String> lista = new ArrayList<>();
-        PrintService[] services = PrinterJob.lookupPrintServices(); // Usamos PrinterJob ahora
-        for (PrintService s : services) lista.add(s.getName());
-        Collections.sort(lista);
-        return lista;
-    }
-
-    // --- MÉTODO PRINCIPAL DE IMPRESIÓN ---
-    // --- MÉTODO PRINCIPAL DE IMPRESIÓN ---
+    // --- EL MOTOR DE IMPRESIÓN POR RED (SOCKETS TCP) ---
+    // Ya no recibe la IP como parámetro, la toma de la variable global cargada
     public static void imprimir(String textoTicket) {
-        if (impresoraSeleccionada == null || impresoraSeleccionada.isEmpty()) {
-            JOptionPanePro.mostrarMensaje(null, "Aviso", "Configura la impresora primero.", "ADVERTENCIA");
+        if (!autoImprimir) return;
+
+        if (ipImpresora == null || ipImpresora.isEmpty()) {
+            System.out.println("Aviso: Configura la IP de la impresora primero.");
             return;
         }
 
-        try {
-            PrintService servicio = null;
-            PrintService[] services = PrinterJob.lookupPrintServices();
-            for (PrintService s : services) {
-                if (s.getName().equalsIgnoreCase(impresoraSeleccionada)) {
-                    servicio = s;
-                    break;
-                }
-            }
+        int puerto = 9100;
+        boolean imprimirLogo = true;
 
-            if (servicio == null) {
-                JOptionPanePro.mostrarMensaje(null, "Error", "Impresora no encontrada.", "ERROR");
-                return;
-            }
+        try (java.net.Socket socket = new java.net.Socket(ipImpresora, puerto);
+             java.io.OutputStream out = socket.getOutputStream()) {
 
-            PrinterJob job = PrinterJob.getPrinterJob();
-            job.setPrintService(servicio);
-
-            // ==========================================
-            // CÁLCULO DINÁMICO DE LA ALTURA DEL TICKET
-            // ==========================================
-            int alturaCalculada = 0;
-
-            // 1. Sumar altura del logo (si existe)
-            java.io.File logoFile = new java.io.File("recursos/logo.png");
-            if (logoFile.exists()) {
-                alturaCalculada += 70; // 60 de alto + 10 de margen
-            }
-
-            // 2. Sumar altura del texto y códigos de barras
             String[] lineas = textoTicket.split("\n");
-            int altoLineaTexto = 11; // Altura promedio de fuente Consolas a 9pt
+
+            int margenSuperiorMm = 6;
+            int margenInferiorMm = 11;
+            int yDibujo = margenSuperiorMm * 8;
+
+            int alturaSimulada = yDibujo;
+            java.awt.Image imgLogo = util.CacheRecursos.getLogoTicket();
+
+            if (imgLogo != null && imprimirLogo) alturaSimulada += 180;
 
             for (String linea : lineas) {
-                if (linea.startsWith("<<<BARCODE:") && linea.endsWith(">>>")) {
-                    alturaCalculada += 50; // Espacio que ocupa el bloque del código de barras
-                } else {
-                    alturaCalculada += altoLineaTexto; // Espacio de una línea de texto normal
-                }
+                if (linea.startsWith("<<<BARCODE:")) alturaSimulada += 80;
+                else alturaSimulada += 30;
             }
 
-            // 3. Añadir margen inferior de seguridad para el corte (evita cortar letras a la mitad)
-            alturaCalculada += 40;
+            int heightMm = (alturaSimulada / 8) + margenInferiorMm;
 
-            // ==========================================
+            StringBuilder tspl = new StringBuilder();
+            tspl.append("SIZE 58 mm, ").append(heightMm).append(" mm\r\n");
+            tspl.append("GAP 0 mm, 0 mm\r\n");
+            tspl.append("SET TEAR ON\r\n");
+            tspl.append("REFERENCE 0,0\r\n");
+            tspl.append("OFFSET 0 mm, 0 mm\r\n");
+            tspl.append("DIRECTION 1\r\n");
+            tspl.append("CLS\r\n");
 
-            PageFormat pf = new PageFormat();
-            Paper paper = new Paper();
+            out.write(tspl.toString().getBytes("ISO-8859-1"));
 
-            double width = 155; // 55mm exactos
-            double height = alturaCalculada; // ALTURA DINÁMICA APLICADA
+            if (imgLogo != null && imprimirLogo) {
+                byte[] logoBytes = generarComandoLogoTSPL(110, yDibujo, imgLogo);
+                out.write(logoBytes);
+                yDibujo += 180;
+            }
 
-            paper.setSize(width, height);
-            paper.setImageableArea(0, 0, width, height);
+            StringBuilder body = new StringBuilder();
+            for (String linea : lineas) {
+                if (linea.startsWith("<<<BARCODE:") && linea.endsWith(">>>")) {
+                    String data = linea.substring(11, linea.length() - 3);
+                    body.append("BARCODE 40,").append(yDibujo).append(",\"128\",50,1,0,2,2,\"").append(data).append("\"\r\n");
+                    yDibujo += 80;
+                    continue;
+                }
 
-            pf.setPaper(paper);
-            pf.setOrientation(PageFormat.PORTRAIT);
+                String textoSeguro = linea.replace("\"", "'");
+                String font = textoSeguro.contains("TOTAL:") ? "3" : "2";
 
-            PageFormat validatePage = job.validatePage(pf);
+                body.append("TEXT 24,").append(yDibujo).append(",\"").append(font).append("\",0,1,1,\"").append(textoSeguro).append("\"\r\n");
+                yDibujo += 30;
+            }
 
-            job.setPrintable(new TicketPrintable(textoTicket), validatePage);
-            job.print();
+            body.append("PRINT 1\r\n");
+            out.write(body.toString().getBytes("ISO-8859-1"));
+            out.flush();
 
-        } catch (PrinterException e) {
-            e.printStackTrace();
-            JOptionPanePro.mostrarMensaje(null, "Error Impresión", e.getMessage(), "ERROR");
         } catch (Exception e) {
             e.printStackTrace();
+            ui.componentes.JOptionPanePro.mostrarMensaje(null, "Error de Red",
+                    "Fallo al conectar con la impresora en IP: " + ipImpresora + "\nVerifica el cable Ethernet.", "ERROR");
         }
     }
 
-    // --- CLASE INTERNA QUE DIBUJA EL TICKET ---
-    static class TicketPrintable implements Printable {
-        private String contenido;
+    // --- CONVERTIDOR DE IMAGEN A TSPL BITMAP ---
+    private static byte[] generarComandoLogoTSPL(int x, int y, java.awt.Image logo) {
+        if (logo == null) return new byte[0];
 
-        public TicketPrintable(String texto) {
-            this.contenido = texto;
-        }
+        int width = 160;
+        int height = 160;
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g2d = img.createGraphics();
+        g2d.setColor(java.awt.Color.WHITE);
+        g2d.fillRect(0, 0, width, height);
+        g2d.drawImage(logo, 0, 0, width, height, null);
+        g2d.dispose();
 
-        @Override
-        public int print(Graphics graphics, PageFormat pageFormat, int pageIndex) throws PrinterException {
-            if (pageIndex > 0) return NO_SUCH_PAGE;
+        int widthBytes = width / 8;
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
 
-            Graphics2D g2d = (Graphics2D) graphics;
-            g2d.translate(pageFormat.getImageableX(), pageFormat.getImageableY());
+        try {
+            String header = "BITMAP " + x + "," + y + "," + widthBytes + "," + height + ",0,";
+            baos.write(header.getBytes("ISO-8859-1"));
 
-            int y = 0;
-
-            // 1. LOGO (Igual que antes)
-            try {
-                Image img = util.CacheRecursos.getLogoTicket();
-                if (img != null) {
-                    int logoAncho = 60;
-                    int logoAlto = 60;
-                    int xLogo = (138 - logoAncho) / 2;
-                    g2d.drawImage(img, xLogo, 0, logoAncho, logoAlto, null);
-                    y = logoAlto + 10;
+            for (int r = 0; r < height; r++) {
+                for (int c = 0; c < widthBytes; c++) {
+                    int b = 0;
+                    for (int bit = 0; bit < 8; bit++) {
+                        int rgb = img.getRGB(c * 8 + bit, r);
+                        int luminancia = (((rgb >> 16) & 0xFF) + ((rgb >> 8) & 0xFF) + (rgb & 0xFF)) / 3;
+                        if (luminancia < 128) b |= (1 << (7 - bit));
+                    }
+                    baos.write(b);
                 }
-            } catch (Exception e) {}
-
-            // 2. PREPARAR FUENTES
-            Font fontTexto = new Font("Consolas", Font.PLAIN, 9);
-            Font fontNegrita = new Font("Consolas", Font.BOLD, 10);
-
-            // Cargar Fuente Code39
-            // FUENTE DE BARRAS (DESDE CACHÉ RAM)
-            Font fontBarra = util.CacheRecursos.getFuenteCodigoBarras();
-
-            g2d.setColor(Color.BLACK);
-            int lineHeight = g2d.getFontMetrics(fontTexto).getHeight();
-
-            // 3. DIBUJAR LÍNEAS
-            String[] lineas = contenido.split("\n");
-
-            for (String linea : lineas) {
-
-                // DETECTAR CÓDIGO DE BARRAS
-                if (linea.startsWith("<<<BARCODE:") && linea.endsWith(">>>")) {
-                    // Extraer dato: <<<BARCODE:12345>>> -> 12345
-                    String data = linea.substring(11, linea.length() - 3);
-                    String codigoFinal = "*" + data + "*"; // Code39 necesita asteriscos
-
-                    g2d.setFont(fontBarra);
-
-                    // Centrar código
-                    int anchoBarra = g2d.getFontMetrics().stringWidth(codigoFinal);
-                    int xBarra = (138 - anchoBarra) / 2;
-
-                    // Dibujar Barras
-                    g2d.drawString(codigoFinal, xBarra, y + 20); // Un poco más de espacio arriba
-
-                    // Dibujar Texto Humano debajo
-                    g2d.setFont(new Font("Arial", Font.PLAIN, 8));
-                    String textoHumano = data;
-                    int anchoTextoH = g2d.getFontMetrics().stringWidth(textoHumano);
-                    g2d.drawString(textoHumano, (138 - anchoTextoH) / 2, y + 35);
-
-                    y += 50; // Espacio que ocupa el código
-                    continue; // Saltar al siguiente ciclo
-                }
-
-                // DIBUJAR TEXTO NORMAL
-                if (linea.contains("TOTAL:")) {
-                    g2d.setFont(fontNegrita);
-                } else {
-                    g2d.setFont(fontTexto);
-                }
-
-                g2d.drawString(linea, 0, y);
-                y += lineHeight;
             }
-
-            g2d.setFont(fontTexto);
-            g2d.drawString(".", 0, y + 10); // Corte
-
-            return PAGE_EXISTS;
+            baos.write("\r\n".getBytes("ISO-8859-1"));
+        } catch (Exception e) {
+            e.printStackTrace();
         }
+
+        return baos.toByteArray();
     }
 }

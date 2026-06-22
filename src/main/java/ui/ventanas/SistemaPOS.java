@@ -26,29 +26,22 @@ public class SistemaPOS extends JFrame {
 
         setTitle("Lumtech " + rolUsuario);
         setResizable(false);
-        //setResizable(false);
         setSize(1280, 768);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
         Image iconoApp = Recursos.getImagenApp();
         if (iconoApp != null) setIconImage(iconoApp);
-        getContentPane().setBackground(Estilos.COLOR_FONDO); // Fondo ventana
+        getContentPane().setBackground(Estilos.COLOR_FONDO);
 
         // INICIAR RESPALDO AUTOMÁTICO
         BackupManager.iniciarScheduler();
 
         // Estilizar Tabs
         tabs = new TabbedPanePro();
-
-
-
-
-
-
         tabs.setFont(Estilos.FONT_BOLD);
         tabs.setBackground(Estilos.COLOR_PANEL);
-        tabs.setForeground(Color.BLACK);
+        tabs.setForeground(new java.awt.Color(200, 200, 200));
 
         // Instancias
         PanelVentas pVentas = new PanelVentas();
@@ -59,80 +52,52 @@ public class SistemaPOS extends JFrame {
         PanelClientes pClientes = new PanelClientes(pServicios, tabs);
 
         tabs.addTab("INICIO", new PanelDashboard());
-        tabs.addTab("VENTAS", pVentas);
-        tabs.addTab("SERVICIOS", pServicios);
+        tabs.addTab("CAJA", pVentas);
+        tabs.addTab("TALLER", pServicios);
 
         if ("ADMIN".equals(rolUsuario)) {
-            // EL ADMIN VE TODO
-
-            tabs.addTab("INVENTARIO", pInventario);
-            tabs.addTab("FALTANTES", pFaltantes);
+            tabs.addTab("PRODUCTOS", pInventario);
+            tabs.addTab("SURTIR", pFaltantes);
             tabs.addTab("FINANZAS", pFinanzas);
             tabs.addTab("CLIENTES", pClientes);
-
-
         } else {
-            // EL CAJERO SOLO VE LO OPERATIVO
-            // Puedes decidir si el cajero ve inventario/faltantes o no.
-            // Según tu petición, quitamos FINANZAS.
-            // Normalmente un cajero tampoco debería editar Configuración.
-
-            tabs.addTab("INVENTARIO", pInventario); // Cajero suele necesitar buscar precios
-            tabs.addTab("FALTANTES", pFaltantes);   // Cajero puede reportar faltantes
-            // FINANZAS -> NO SE AGREGA
-            // CONFIGURACION -> NO SE AGREGA (Opcional)
+            tabs.addTab("SURTIR", pFaltantes);
         }
-        // --- 3. CONFIGURACIÓN (ICONO TUERCA) ---
 
         PanelConfiguracion pConfig = new PanelConfiguracion(rolUsuario);
-
-        // Agregamos la pestaña normalmente (al final)
-        // Truco: Título vacío "" y le seteamos el icono después
         tabs.addTab("", pConfig);
 
-        // Asignar icono a la última pestaña añadida (Índice count - 1)
-        // Asegúrate de tener "tuerca.png" en recursos (tamaño 24x24 blanco)
         int indexConfig = tabs.getTabCount() - 1;
         tabs.setIconAt(indexConfig, Recursos.getIcono("tuerca.png"));
         tabs.setToolTipTextAt(indexConfig, "Configuración del Sistema");
 
-// --- DETECTAR CAMBIO DE PESTAÑA Y DAR FOCO / SEGURIDAD ---
-        final int[] pestanaAnterior = {0}; // Para recordar dónde estábamos
+        final int[] pestanaAnterior = {0};
 
         tabs.addChangeListener(e -> {
             Component c = tabs.getSelectedComponent();
             int indiceActual = tabs.getSelectedIndex();
             Component prev = tabs.getComponentAt(pestanaAnterior[0]);
 
-            // --- NUEVO: Si la pestaña anterior era Finanzas, borrar sus datos por privacidad ---
             if (prev instanceof PanelFinanzas && c != prev) {
                 ((PanelFinanzas)prev).limpiarDatos();
             }
+
             // 1. SEGURIDAD: Verificar si es un área restringida
             if(c instanceof PanelFinanzas || c instanceof PanelConfiguracion) {
-                JPasswordField pf = new JPasswordField();
-                int option = JOptionPane.showConfirmDialog(this, pf,
-                        "Área Restringida. Confirma tu contraseña:",
-                        JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
 
-                if (option == JOptionPane.OK_OPTION) {
-                    String passIngresada = new String(pf.getPassword());
-                    if (validarContrasenaEnBD(passIngresada)) {
-                        pestanaAnterior[0] = indiceActual; // Acceso concedido, actualizar historial
-                    } else {
-                        JOptionPanePro.mostrarMensaje(this, "Error", "Contraseña incorrecta.", "ERROR");
-                        tabs.setSelectedIndex(pestanaAnterior[0]); // Rechazado, regresar
-                        return;
-                    }
+                boolean accesoConcedido = solicitarPinSeguridad();
+
+                if (accesoConcedido) {
+                    pestanaAnterior[0] = indiceActual; // Actualizar historial, acceso permitido
                 } else {
-                    tabs.setSelectedIndex(pestanaAnterior[0]); // Canceló, regresar
-                    return;
+                    tabs.setSelectedIndex(pestanaAnterior[0]); // Rechazado o cerrado, regresar
+                    return; // Aborta la carga del resto del código
                 }
+
             } else {
-                pestanaAnterior[0] = indiceActual; // Es un panel libre, actualizamos historial
+                pestanaAnterior[0] = indiceActual; // Es un panel libre
             }
 
-            // 2. LÓGICA DE FOCOS Y CARGAS (Tu código original)
             if(c == pVentas) { pVentas.cargarCatalogo(); pVentas.darFocoCodigo(); }
             else if(c instanceof PanelFaltantes) ((PanelFaltantes)c).cargarFaltantes();
             else if(c instanceof PanelFinanzas) ((PanelFinanzas)c).consultar();
@@ -142,19 +107,12 @@ public class SistemaPOS extends JFrame {
         });
 
         btnCerrarSesion = new BotonPro("", "logout.png", new Color(0,0,0,0), this::cerrarSesion);
-        // Ajustamos tamaño pequeño para que quepa en la barra de título
         btnCerrarSesion.setSize(35, 35);
 
-        // --- 3. JLAYEREDPANE (EL CONTENEDOR MAGICO) ---
         JLayeredPane layeredPane = new JLayeredPane();
-
-        // Agregamos las pestañas en la capa DEFAULT (Fondo)
         layeredPane.add(tabs, JLayeredPane.DEFAULT_LAYER);
-
-        // Agregamos el botón en la capa PALETTE (Arriba)
         layeredPane.add(btnCerrarSesion, JLayeredPane.PALETTE_LAYER);
 
-// --- NUEVO: Leer pestaña por defecto desde config.properties ---
         java.util.Properties props = new java.util.Properties();
         try (java.io.FileInputStream fis = new java.io.FileInputStream("config.properties")) {
             props.load(fis);
@@ -166,29 +124,16 @@ public class SistemaPOS extends JFrame {
                     break;
                 }
             }
-        } catch (Exception ex) {
-            // Si falla, se queda en el índice 0 (INICIO) por defecto
-        }
+        } catch (Exception ex) {}
 
-        // Agregamos el LayeredPane a la ventana
         setContentPane(layeredPane);
 
-        // --- 4. LISTENER DE REDIMENSIÓN (Responsividad) ---
-        // Esto asegura que el botón siempre esté a la derecha y los tabs llenen la pantalla
         this.addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
-
-                // Las pestañas ocupan toda la ventana (menos los bordes del SO)
-                // Ajustamos un poco el height si es necesario, getContentPane().getHeight() es mejor
                 int contentW = getContentPane().getWidth();
                 int contentH = getContentPane().getHeight();
-
                 tabs.setBounds(0, 0, contentW, contentH);
-
-                // El botón se pega a la derecha.
-                // Y = 5 para que quede alineado con las pestañas
-                // X = AnchoTotal - AnchoBoton - Margen(15)
                 btnCerrarSesion.setBounds(contentW - 50, 6, 35, 35);
             }
         });
@@ -199,7 +144,6 @@ public class SistemaPOS extends JFrame {
         if (confirmar) {
             LoggerPro.registrar("LOGIN", "Cierre de sesión: " + Sesion.usuarioActual);
 
-            // --- NUEVO: Borrar sesión del archivo de configuración ---
             java.util.Properties props = new java.util.Properties();
             java.io.File archivo = new java.io.File("config.properties");
             if (archivo.exists()) {
@@ -208,32 +152,10 @@ public class SistemaPOS extends JFrame {
             props.remove("session.user");
             props.remove("session.pass");
             try (java.io.FileOutputStream fos = new java.io.FileOutputStream(archivo)) { props.store(fos, "Configuracion Sistema POS"); } catch(Exception ex){}
-            // ---------------------------------------------------------
 
-            // Cerrar esta ventana
             this.dispose();
-
-            // Abrir Login limpio
             new Login().setVisible(true);
         }
-    }
-
-    public static void main(String[] args) {
-        // 1. Configurar zona horaria
-        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/Mexico_City"));
-
-        // 2. Instalar el Look and Feel de FlatLaf ANTES de cualquier otra cosa
-        try {
-            FlatDarkLaf.setup();
-        } catch (Exception e) {
-            System.err.println("Error al iniciar FlatLaf");
-        }
-
-        // 3. Iniciar la aplicación
-        SwingUtilities.invokeLater(() -> {
-            ImpresoraTicket.cargarConfiguracionInicial();
-            new Login().setVisible(true);
-        });
     }
 
     private boolean validarContrasenaEnBD(String password) {
@@ -243,10 +165,107 @@ public class SistemaPOS extends JFrame {
             ps.setString(1, Sesion.usuarioActual);
             ps.setString(2, password);
             java.sql.ResultSet rs = ps.executeQuery();
-            return rs.next(); // Si devuelve un registro, la contraseña es correcta
+            return rs.next();
         } catch (Exception ex) {
             ex.printStackTrace();
             return false;
         }
+    }
+
+    public static void main(String[] args) {
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/Mexico_City"));
+
+        try {
+            // 1. PRIMERO instalamos el tema base de FlatLaf
+            FlatDarkLaf.setup();
+
+            // 2. DESPUÉS sobrescribimos los colores a nuestro gusto
+            javax.swing.UIManager.put("TabbedPane.foreground", new java.awt.Color(200, 200, 200));
+            javax.swing.UIManager.put("TabbedPane.selectedForeground", java.awt.Color.WHITE);
+
+        } catch (Exception e) {
+            System.err.println("Error al iniciar FlatLaf");
+        }
+
+        SwingUtilities.invokeLater(() -> {
+            // El arranque limpio, usando la clase que arreglamos antes
+            ImpresoraTicket.cargarConfiguracionInicial();
+            new Login().setVisible(true);
+        });
+    }
+
+    private boolean solicitarPinSeguridad() {
+        final boolean[] autenticado = {false};
+
+        JDialog dialog = new JDialog(this, "Seguridad", true);
+        dialog.setSize(280, 140);
+        dialog.setLocationRelativeTo(this);
+        dialog.setResizable(false);
+        dialog.setLayout(new java.awt.BorderLayout());
+
+        JLabel lblMensaje = new JLabel("Ingresa tu PIN (4 dígitos)", SwingConstants.CENTER);
+        lblMensaje.setBorder(BorderFactory.createEmptyBorder(15, 0, 5, 0));
+        lblMensaje.setFont(util.Estilos.FONT_BOLD);
+
+        JPasswordField pf = new JPasswordField(4);
+        pf.setHorizontalAlignment(JTextField.CENTER);
+        pf.setFont(new Font("Consolas", Font.BOLD, 28));
+
+        // LA MAGIA: Escuchar el teclado en tiempo real
+        pf.addKeyListener(new java.awt.event.KeyAdapter() {
+            @Override
+            public void keyTyped(java.awt.event.KeyEvent e) {
+                char c = e.getKeyChar();
+                // 1. Bloquear letras (solo números) permitiendo borrar (backspace)
+                if (!Character.isDigit(c) && c != '\b') {
+                    e.consume();
+                }
+                // 2. Bloquear si ya hay 4 números
+                else if (Character.isDigit(c) && pf.getPassword().length >= 4) {
+                    e.consume();
+                }
+            }
+
+            @Override
+            public void keyReleased(java.awt.event.KeyEvent e) {
+                char[] p = pf.getPassword();
+
+                // 3. Cuando llegue al cuarto dígito, auto-valida sin presionar Enter
+                if (p.length == 4) {
+                    String pass = new String(p);
+                    if (validarContrasenaEnBD(pass)) {
+                        autenticado[0] = true;
+                        dialog.dispose(); // Cierra y da acceso
+                    } else {
+                        java.awt.Toolkit.getDefaultToolkit().beep(); // Sonido de error
+                        lblMensaje.setText("¡PIN Incorrecto!");
+                        lblMensaje.setForeground(Color.RED);
+                        pf.setText(""); // Vacía la caja para que el usuario intente de nuevo
+                    }
+                } else if (p.length < 4) {
+                    // Si borró números, restaura el mensaje visual a su estado normal
+                    lblMensaje.setText("Ingresa tu PIN (4 dígitos)");
+                    lblMensaje.setForeground(UIManager.getColor("Label.foreground"));
+                }
+            }
+        });
+
+        JPanel pnlCentro = new JPanel();
+        pnlCentro.add(pf);
+
+        dialog.add(lblMensaje, java.awt.BorderLayout.NORTH);
+        dialog.add(pnlCentro, java.awt.BorderLayout.CENTER);
+
+        // DAR FOCO AUTOMÁTICO AL ABRIR
+        dialog.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowOpened(java.awt.event.WindowEvent e) {
+                pf.requestFocusInWindow();
+            }
+        });
+
+        dialog.setVisible(true); // El código se pausa aquí hasta que el modal se cierre
+
+        return autenticado[0];
     }
 }

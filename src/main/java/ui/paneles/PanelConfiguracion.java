@@ -17,7 +17,7 @@ import java.util.Properties;
 public class PanelConfiguracion extends JPanel {
 
     // Componentes Impresora
-    private JComboBox<String> cmbImpresora;
+    private JTextField txtIpImpresora;
     private JCheckBox chkAutoImprimir;
 
     // Componentes Perfil
@@ -62,8 +62,12 @@ public class PanelConfiguracion extends JPanel {
         g.insets = new Insets(10,10,10,10); g.fill = GridBagConstraints.HORIZONTAL;
 
         addLbl(p, g, 0, 0, "Impresora Tickets:");
-        cmbImpresora = new JComboBox<>();
-        g.gridx=1; p.add(cmbImpresora, g);
+
+        // Instanciamos el campo de texto con un tamaño sugerido (ej. 15 columnas)
+        txtIpImpresora = new JTextField(15);
+        txtIpImpresora.putClientProperty("JTextField.placeholderText", "Ej. 192.168.1.100");
+        txtIpImpresora.setFont(util.Estilos.FONT_BOLD);
+        g.gridx=0; g.gridy=1; g.gridwidth=2; p.add(txtIpImpresora, g);
 
         chkAutoImprimir = new JCheckBox("Imprimir Automáticamente al Vender");
         chkAutoImprimir.setBackground(Estilos.COLOR_PANEL);
@@ -159,34 +163,41 @@ public class PanelConfiguracion extends JPanel {
     // ==========================================
 
     private void cargarConfiguracionGlobal() {
-        List<String> impresoras = ImpresoraTicket.obtenerImpresorasDisponibles();
-        cmbImpresora.removeAllItems();
-        for (String imp : impresoras) cmbImpresora.addItem(imp);
-
         File configFile = new File("config.properties");
         if (configFile.exists()) {
             Properties props = new Properties();
             try (FileInputStream fis = new FileInputStream(configFile)) {
                 props.load(fis);
-                String impGuardada = props.getProperty("ticket.impresora");
-                if(impGuardada != null) cmbImpresora.setSelectedItem(impGuardada);
+
+                // --- NUEVA LÓGICA DE RED ---
+                String ipGuardada = props.getProperty("ticket.ip_impresora");
+                if(ipGuardada != null) txtIpImpresora.setText(ipGuardada); // Muestra la IP en el campo de texto
+
                 chkAutoImprimir.setSelected(Boolean.parseBoolean(props.getProperty("ticket.auto_imprimir", "true")));
 
+                // --- CONFIGURACIÓN DE BD (Intacta) ---
                 txtDbIp.setText(props.getProperty("db.ip", "localhost"));
                 txtDbPuerto.setText(props.getProperty("db.port", "3306"));
                 txtDbUser.setText(props.getProperty("db.user", "root"));
                 txtDbPass.setText(props.getProperty("db.password", ""));
                 txtRutaDump.setText(props.getProperty("db.dump_path", ""));
-            } catch (Exception e) {}
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     }
 
     private void guardarConfigImpresora() {
-        actualizarProperties("ticket.impresora", (String) cmbImpresora.getSelectedItem());
+        // 1. Guardamos en el archivo config.properties
+        actualizarProperties("ticket.ip_impresora", txtIpImpresora.getText().trim());
         actualizarProperties("ticket.auto_imprimir", String.valueOf(chkAutoImprimir.isSelected()));
-        ImpresoraTicket.setImpresora((String) cmbImpresora.getSelectedItem());
+
+        // 2. Actualizamos la memoria del programa para que tome el cambio al instante
+        ImpresoraTicket.setIpImpresora(txtIpImpresora.getText().trim());
         ImpresoraTicket.setAutoImprimir(chkAutoImprimir.isSelected());
-        JOptionPanePro.mostrarMensaje(this, "Guardado", "Configuración de impresión actualizada.", "INFO");
+
+        // 3. Confirmación visual
+        JOptionPanePro.mostrarMensaje(this, "Guardado", "Configuración de red de la impresora actualizada.", "INFO");
     }
 
     private void guardarConfigBD() {

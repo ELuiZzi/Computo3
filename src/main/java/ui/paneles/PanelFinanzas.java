@@ -413,6 +413,7 @@ public class PanelFinanzas extends JPanel {
         } catch (Exception e) { e.printStackTrace(); }
 
         String t = GeneradorTicket.crearTicket(idVenta, fecha, items, total);
+        // Reemplaza "192.168.X.X" por la IP real de tu Ribetec
         ImpresoraTicket.imprimir(t);
         JOptionPanePro.mostrarMensaje(this, "Impresión", "Ticket reimpreso en consola.", "INFO");
     }

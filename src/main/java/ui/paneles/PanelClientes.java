@@ -1,7 +1,5 @@
 package ui.paneles;
 
-
-
 import config.ConexionBD;
 import ui.componentes.*;
 import util.*;
@@ -103,11 +101,13 @@ public class PanelClientes extends JPanel {
         lblTotalGastado.setForeground(Color.GREEN);
 
         // Armado Form
-        g.gridx=0; g.gridy=0; pForm.add(lbl("Nombre:"), g);
-        g.gridx=1; pForm.add(txtNombre, g);
 
-        g.gridx=0; g.gridy=1; pForm.add(lbl("WhatsApp:"), g);
+
+        g.gridx=0; g.gridy=0; pForm.add(lbl("WhatsApp:"), g);
         g.gridx=1; pForm.add(txtTelefono, g);
+
+        g.gridx=0; g.gridy=1; pForm.add(lbl("Nombre:"), g);
+        g.gridx=1; pForm.add(txtNombre, g);
 
         g.gridx=0; g.gridy=2; pForm.add(lbl("Historial:"), g);
         JPanel pStats = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));

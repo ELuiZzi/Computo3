@@ -3,10 +3,7 @@ package ui.paneles;
 
 
 import config.ConexionBD;
-import servicios.DialogoServicioRapido;
-import servicios.GeneradorPDF;
-import servicios.GeneradorTicket;
-import servicios.ImpresoraTicket;
+import servicios.*;
 import ui.componentes.*;
 import ui.ventanas.DialogoServiciosFijos;
 import util.*;
@@ -104,6 +101,7 @@ public class PanelServicios extends JPanel {
 
         // 2. Botón Nueva Orden (Ahora VERDE)
         BotonPro btnNuevo = new BotonPro("NUEVA ORDEN", "mas.png", new Color(46, 204, 113), () -> mostrarFormulario(-1));
+        btnNuevo.setForeground(new Color(43, 45, 48));
         btnNuevo.setPreferredSize(new Dimension(180, 45));
 
         pBtnsTop.add(btnRapido);
@@ -215,10 +213,63 @@ public class PanelServicios extends JPanel {
         txtDispositivo = input(); txtMarca = input(); txtPass = input();
         txtFalla = area(); txtDiagnostico = area();
 
-        cmbTipoEquipo = new JComboBox<>(new String[]{"CELULAR", "LAPTOP", "PC", "IMPRESORA", "CONSOLA", "OTRO"});
+        cmbTipoEquipo = new JComboBox<>(new String[]{"LAPTOP", "PC", "IMPRESORA", "OTRO"});
         cmbTipoEquipo.addActionListener(e -> alternarPanelTintas());
 
         cmbEstado = new JComboBox<>(new String[]{"RECIBIDO", "DIAGNOSTICO", "EN REPARACION", "ESPERA REFACCION", "LISTO", "ENTREGADO"});
+
+        //Listeners
+        // Agrega esto donde inicializas tus componentes en PanelServicios
+        txtTelefono.addKeyListener(new java.awt.event.KeyAdapter() {
+            @Override
+            public void keyTyped(java.awt.event.KeyEvent e) {
+                char c = e.getKeyChar();
+                // 1. Solo permitir números y borrar
+                if (!Character.isDigit(c) && c != '\b') {
+                    e.consume();
+                }
+                // 2. Bloquear si ya llegó a 10 dígitos
+                if (Character.isDigit(c) && txtTelefono.getText().length() >= 10) {
+                    e.consume();
+                }
+            }
+
+            @Override
+            public void keyReleased(java.awt.event.KeyEvent e) {
+                String telefono = txtTelefono.getText().trim();
+
+                // 3. Lanzar la auto-búsqueda exactamente a los 10 dígitos
+                if (telefono.length() == 10) {
+                    String nombreEncontrado = buscarNombrePorTelefono(telefono);
+
+                    if (nombreEncontrado != null) {
+                        // CLIENTE FRECUENTE
+                        txtNombre.setText(nombreEncontrado);
+                        // Tip visual: Un fondo verde súper sutil para indicar que se auto-rellenó
+                        txtNombre.setBackground(new java.awt.Color(40, 70, 50)); // Ajusta al tema oscuro
+                        txtNombre.setForeground(java.awt.Color.WHITE);
+
+                        // Saltar automáticamente al siguiente campo (Ej. Tipo o Modelo)
+                        cmbTipoEquipo.requestFocusInWindow();
+                    } else {
+                        // CLIENTE NUEVO
+                        txtNombre.setText("");
+                        // Restaurar colores normales
+                        txtNombre.setBackground(javax.swing.UIManager.getColor("TextField.background"));
+                        txtNombre.setForeground(javax.swing.UIManager.getColor("TextField.foreground"));
+
+                        // Dar foco para que el empleado escriba el nuevo nombre
+                        txtNombre.requestFocusInWindow();
+                    }
+                } else {
+                    // Si el empleado borra números por error, regresamos a la normalidad
+                    txtNombre.setBackground(javax.swing.UIManager.getColor("TextField.background"));
+                    txtNombre.setForeground(javax.swing.UIManager.getColor("TextField.foreground"));
+                }
+            }
+        });
+
+
 
         // Panel Tintas
         panelTintas = new JPanel(new GridLayout(1, 4, 5, 0));
@@ -239,8 +290,9 @@ public class PanelServicios extends JPanel {
 
         // Cliente
         g.gridwidth=1;
-        addLbl(pIzquierda, g, 0, 1, "Cliente:"); g.gridx=1; pIzquierda.add(txtNombre, g);
-        addLbl(pIzquierda, g, 0, 2, "Teléfono:"); g.gridx=1; pIzquierda.add(txtTelefono, g);
+        addLbl(pIzquierda, g, 0, 1, "Teléfono:"); g.gridx=1; pIzquierda.add(txtTelefono, g);
+        addLbl(pIzquierda, g, 0, 2, "Cliente:"); g.gridx=1; pIzquierda.add(txtNombre, g);
+
 
         // Equipo
         addLbl(pIzquierda, g, 0, 3, "Tipo:"); g.gridx=1; pIzquierda.add(cmbTipoEquipo, g);
@@ -377,7 +429,7 @@ public class PanelServicios extends JPanel {
         JPanel pAcciones = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         pAcciones.setBackground(Estilos.COLOR_PANEL);
 
-        BotonPro btnGuardar = new BotonPro("GUARDAR", "guardar.png", Estilos.COLOR_ACCENT, this::guardarOrden);
+        BotonPro btnGuardar = new BotonPro("GUARDER", "guardar.png", Estilos.COLOR_ACCENT, this::guardarOrden);
         BotonPro btnPDF = new BotonPro("PDF", "ticket.png", new Color(200, 50, 50), this::generarPDFFormulario);
         BotonPro btnAbonar = new BotonPro("$ ABONAR", Color.ORANGE, () -> cobrarConcepto("ABONO"));
         BotonPro btnLiquidar = new BotonPro("$ LIQUIDAR", new Color(46, 204, 113), () -> cobrarConcepto("LIQUIDACION"));
@@ -393,6 +445,7 @@ public class PanelServicios extends JPanel {
 
         return panel;
     }
+
 
     // =================================================================
     // LÓGICA PRINCIPAL
@@ -700,8 +753,6 @@ public class PanelServicios extends JPanel {
     // Asegúrate de copiar el método llenarParams actualizado para usar txtCostoPresupuesto
     // Y el método obtenerOInsertarCliente.
 
-    // ... Pega aquí los métodos guardarOrden, llenarParams, generarPDF, etc. ...
-    // NOTA: En llenarParams, usa parser(txtCostoPresupuesto.getText()) para el costo estimado.
     private void guardarOrden() {
         if (txtNombre.getText().isEmpty() || txtDispositivo.getText().isEmpty()) {
             JOptionPanePro.mostrarMensaje(this, "Datos", "Nombre y Dispositivo obligatorios.", "ADVERTENCIA");
@@ -731,11 +782,35 @@ public class PanelServicios extends JPanel {
             }
 
             lblFolio.setText("FOLIO: " + idOrdenActual);
-            JOptionPanePro.mostrarMensaje(this, "Guardado", "Orden guardada correctamente.", "INFO");
 
-            // CORRECCIÓN: Usamos idOrdenActual y lo ponemos aquí para que solo recargue si tuvo éxito
+            // Refrescamos la UI al instante
             cargarDatosOrden(idOrdenActual);
             cargarHistorialPagos(idOrdenActual);
+
+            // =========================================================
+            // AUTOMATIZACIÓN: GENERAR PDF E IMPRIMIR EN SEGUNDO PLANO
+            // =========================================================
+
+            // 1. Generamos el archivo físico (esta operación es rápida)
+            generarPDFFormulario();
+            String rutaFicheroPDF = obtenerRutaPDF(idOrdenActual);
+
+            // 2. Lanzamos el SwingWorker para mandar a la impresora sin congelar el programa
+            new javax.swing.SwingWorker<Void, Void>() {
+                @Override
+                protected Void doInBackground() throws Exception {
+                    // Llama a la clase que creamos en el paso anterior
+                    ImpresorOrdenes.imprimirOrdenSilenciosa(rutaFicheroPDF);
+                    return null;
+                }
+
+                @Override
+                protected void done() {
+                    // Este código se ejecuta cuando la impresora ya recibió la orden
+                    JOptionPanePro.mostrarMensaje(PanelServicios.this, "Proceso Completado",
+                            "Orden guardada e impresa con éxito.", "INFO");
+                }
+            }.execute();
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -901,5 +976,28 @@ public class PanelServicios extends JPanel {
 
         // Retorna la ruta completa: ordenes/Orden_50.pdf
         return new File(carpeta, "Orden_" + idOrden + ".pdf").getAbsolutePath();
+    }
+
+    private String buscarNombrePorTelefono(String telefono) {
+        String nombre = null;
+
+        // ATENCIÓN: Cambia "servicios" y "cliente" por los nombres reales de tus tablas/columnas.
+        // Ordenamos por id DESC para traer el nombre más reciente (por si lo actualizaron antes).
+        String sql = "SELECT nombre FROM clientes WHERE telefono = ? ORDER BY id DESC LIMIT 1";
+
+        try (java.sql.Connection conn = config.ConexionBD.conectar();
+             java.sql.PreparedStatement pst = conn.prepareStatement(sql)) {
+
+            pst.setString(1, telefono);
+            try (java.sql.ResultSet rs = pst.executeQuery()) {
+                if (rs.next()) {
+                    nombre = rs.getString(1);
+                }
+            }
+        } catch (Exception ex) {
+            System.err.println("Error al auto-completar cliente: " + ex.getMessage());
+        }
+
+        return nombre;
     }
 }

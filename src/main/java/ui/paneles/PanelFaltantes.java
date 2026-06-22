@@ -75,7 +75,7 @@ public class PanelFaltantes extends JPanel {
         };
 
         tabla = new TablaPro(modelo);
-        Estilos.estilizarTabla(tabla);
+        //Estilos.estilizarTabla(tabla);
 
         // --- NUEVO: SORTER PARA ORDENAMIENTO ---
         TableRowSorter<DefaultTableModel> sorter = new TableRowSorter<>(modelo);
@@ -262,15 +262,68 @@ public class PanelFaltantes extends JPanel {
             String nombre = modelo.getValueAt(row, 1).toString();
             procesarEntradaStock(id, nombre);
         } else {
-            String codigo = JOptionPanePro.solicitarEntrada(this, "Scanner", "Código de Barras:");
-            if(codigo != null && !codigo.isEmpty()) buscarYProcesarCodigo(codigo);
+            // En lugar del JOptionPanePro, lanzamos el escáner continuo
+            abrirScannerContinuo();
         }
     }
+
+    private void abrirScannerContinuo() {
+        JDialog dialog = new JDialog(javax.swing.SwingUtilities.getWindowAncestor(this), "Scanner", JDialog.ModalityType.APPLICATION_MODAL);
+        dialog.setSize(350, 150);
+        dialog.setLocationRelativeTo(this);
+        dialog.setResizable(false);
+        dialog.setLayout(new java.awt.BorderLayout());
+
+        JLabel lblInstruccion = new JLabel("Código de Barras:", SwingConstants.CENTER);
+        lblInstruccion.setFont(util.Estilos.FONT_BOLD);
+        lblInstruccion.setBorder(BorderFactory.createEmptyBorder(15, 10, 5, 10));
+
+        JTextField txtCodigo = new JTextField(20);
+        txtCodigo.setHorizontalAlignment(JTextField.CENTER);
+        txtCodigo.setFont(new Font("Consolas", Font.PLAIN, 18));
+
+        // ACCIÓN DEL ESCÁNER (Se dispara con el ENTER)
+        txtCodigo.addActionListener(e -> {
+            String codigo = txtCodigo.getText().trim();
+            if (codigo.isEmpty()) return;
+
+            // Aquí llamamos a tu método procesador
+            boolean exito = buscarYProcesarCodigo(codigo);
+
+            if (exito) {
+                dialog.dispose(); // Surtido exitoso, cerramos el modal
+            } else {
+                // Falló: Alerta auditiva, limpiamos el campo y MANTENEMOS la ventana abierta
+                java.awt.Toolkit.getDefaultToolkit().beep();
+                txtCodigo.setText("");
+                txtCodigo.requestFocusInWindow();
+            }
+        });
+
+        JPanel pnlCentro = new JPanel();
+        pnlCentro.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
+        pnlCentro.add(txtCodigo);
+
+        dialog.add(lblInstruccion, java.awt.BorderLayout.NORTH);
+        dialog.add(pnlCentro, java.awt.BorderLayout.CENTER);
+
+        // Foco automático al abrir
+        dialog.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowOpened(java.awt.event.WindowEvent e) {
+                txtCodigo.requestFocusInWindow();
+            }
+        });
+
+        dialog.setVisible(true);
+    }
+
+
 
     // Métodos auxiliares para surtir (buscarYProcesarCodigo, procesarEntradaStock)
     // Copiar de la versión anterior...
 
-    private void buscarYProcesarCodigo(String codigo) {
+    private boolean buscarYProcesarCodigo(String codigo) {
         try (Connection conn = ConexionBD.conectar()) {
             String sql = "SELECT id, nombre FROM productos WHERE codigo_barras = ? AND activo = 1";
             PreparedStatement ps = conn.prepareStatement(sql);
@@ -283,16 +336,16 @@ public class PanelFaltantes extends JPanel {
 
                 // ¡Encontrado! Pasamos a pedir la cantidad
                 procesarEntradaStock(id, nombre);
-
+return true;
             } else {
                 JOptionPanePro.mostrarMensaje(this, "Error", "Producto no encontrado o inactivo: " + codigo, "ERROR");
-                // Opcional: Volver a pedir código si falló (recursividad simple)
-                // surtirProducto();
+                return false;
             }
         } catch (Exception e) {
             e.printStackTrace();
             JOptionPanePro.mostrarMensaje(this, "Error BD", e.getMessage(), "ERROR");
         }
+        return false;
     }
 
     private void procesarEntradaStock(int idProducto, String nombreProducto) {
