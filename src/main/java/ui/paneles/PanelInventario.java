@@ -3,6 +3,7 @@ package ui.paneles;
 import servicios.AlgoritmoPrecios;
 import config.ConexionBD;
 import ui.ventanas.DialogoCodigos;
+import ui.ventanas.DialogoProducto;
 import util.Estilos;
 import servicios.GeneradorCodigoBarras;
 import servicios.GeneradorEtiquetas;
@@ -239,8 +240,9 @@ public class PanelInventario extends JPanel {
         BotonPro btnBuscar = new BotonPro("IR", Estilos.COLOR_ACCENT, this::filtrarInventario);
         BotonPro btnTodo = new BotonPro("TODO", Color.DARK_GRAY, this::cargarTabla);
         BotonPro btnNuevoProducto = new BotonPro("+ NUEVO PRODUCTO", new Color(46, 204, 113), () -> {
-            // Aquí llamaremos al futuro DialogoProducto
-            JOptionPanePro.mostrarMensaje(this, "Próximamente", "Abrirá la ventana del formulario completo.", "INFO");
+            Frame padre = (Frame) SwingUtilities.getWindowAncestor(this);
+            DialogoProducto dialogo = new DialogoProducto(padre, -1, this::cargarTabla);
+            dialogo.setVisible(true);
         });
 
         // --- AQUÍ MOVIMOS EL BOTÓN ELIMINAR ---
@@ -291,8 +293,24 @@ public class PanelInventario extends JPanel {
         tabla.setComponentPopupMenu(popupMenu);
 
         tabla.addMouseListener(new MouseAdapter() {
+            @Override
             public void mouseClicked(MouseEvent e) {
+                // Clic simple para cargar datos mínimos si es necesario
                 llenarDatosDesdeTabla();
+
+                // DOBLE CLIC: Abre el formulario flotante para edición completa
+                if (e.getClickCount() == 2) {
+                    int fila = tabla.getSelectedRow();
+                    if (fila != -1) {
+                        // Traducimos el índice por seguridad ante filtros
+                        int filaModelo = tabla.convertRowIndexToModel(fila);
+                        int idProducto = Integer.parseInt(modelo.getValueAt(filaModelo, 0).toString());
+
+                        Frame padre = (Frame) SwingUtilities.getWindowAncestor(PanelInventario.this);
+                        DialogoProducto dialogo = new DialogoProducto(padre, idProducto, PanelInventario.this::cargarTabla);
+                        dialogo.setVisible(true);
+                    }
+                }
             }
         });
 
@@ -483,12 +501,22 @@ public class PanelInventario extends JPanel {
     }
 
     private void llenarParams(PreparedStatement ps) throws SQLException {
-        ps.setString(1, txtCodigo.getText());
-        ps.setString(2, txtNombre.getText());
-        ps.setString(3, (String) cmbMarca.getSelectedItem());
-        ps.setString(4, txtModelo.getText());
-        ps.setString(5, (String) cmbCategoria.getSelectedItem());
-        ps.setString(6, (String) cmbProveedor.getSelectedItem());
+        ps.setString(1, txtCodigo.getText().trim());
+        ps.setString(2, txtNombre.getText().trim());
+
+        // Al ser ComboBox editable, extraemos el texto directamente desde su Editor
+        Object marcaObj = cmbMarca.getEditor().getItem();
+        ps.setString(3, marcaObj != null ? marcaObj.toString().trim() : "");
+
+        ps.setString(4, txtModelo.getText().trim());
+
+        // Categoría normal (No editable)
+        ps.setString(5, cmbCategoria.getSelectedItem() != null ? cmbCategoria.getSelectedItem().toString() : "");
+
+        // CONEXIÓN SEGURA DEL PROVEEDOR (Corregido error de sintaxis, paréntesis y combo editable)
+        Object provObj = cmbProveedor.getEditor().getItem();
+        ps.setString(6, provObj != null ? provObj.toString().trim() : "");
+
         ps.setDouble(7, parser(txtCosto.getText()));
         ps.setDouble(8, parser(txtPrecio.getText()));
         ps.setInt(9, (int) parser(txtStock.getText()));

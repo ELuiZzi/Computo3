@@ -772,6 +772,32 @@ public class PanelServicios extends JPanel {
                 ps.executeUpdate();
                 ResultSet rs = ps.getGeneratedKeys();
                 if (rs.next()) idOrdenActual = rs.getInt(1); // Actualizamos la variable global
+
+                // =========================================================
+                // AUTOMATIZACIÓN: GENERAR PDF E IMPRIMIR EN SEGUNDO PLANO
+                // =========================================================
+
+                // 1. Generamos el archivo físico (esta operación es rápida)
+                generarPDFFormulario();
+                String rutaFicheroPDF = obtenerRutaPDF(idOrdenActual);
+
+                // 2. Lanzamos el SwingWorker para mandar a la impresora sin congelar el programa
+                new javax.swing.SwingWorker<Void, Void>() {
+                    @Override
+                    protected Void doInBackground() throws Exception {
+                        // Llama a la clase que creamos en el paso anterior
+                        ImpresorOrdenes.imprimirOrdenSilenciosa(rutaFicheroPDF);
+                        return null;
+                    }
+
+                    @Override
+                    protected void done() {
+                        // Este código se ejecuta cuando la impresora ya recibió la orden
+                        JOptionPanePro.mostrarMensaje(PanelServicios.this, "Proceso Completado",
+                                "Orden guardada e impresa con éxito.", "INFO");
+                    }
+                }.execute();
+
             } else {
                 // ACTUALIZAR
                 String sql = "UPDATE ordenes_servicio SET id_cliente=?, dispositivo=?, tipo_equipo=?, marca_modelo=?, password_patron=?, falla_reportada=?, diagnostico_tecnico=?, costo_estimado=?, anticipo=?, estado=?, niveles_tinta=?, rutas_imagenes=? WHERE id=?";
@@ -787,30 +813,7 @@ public class PanelServicios extends JPanel {
             cargarDatosOrden(idOrdenActual);
             cargarHistorialPagos(idOrdenActual);
 
-            // =========================================================
-            // AUTOMATIZACIÓN: GENERAR PDF E IMPRIMIR EN SEGUNDO PLANO
-            // =========================================================
 
-            // 1. Generamos el archivo físico (esta operación es rápida)
-            generarPDFFormulario();
-            String rutaFicheroPDF = obtenerRutaPDF(idOrdenActual);
-
-            // 2. Lanzamos el SwingWorker para mandar a la impresora sin congelar el programa
-            new javax.swing.SwingWorker<Void, Void>() {
-                @Override
-                protected Void doInBackground() throws Exception {
-                    // Llama a la clase que creamos en el paso anterior
-                    ImpresorOrdenes.imprimirOrdenSilenciosa(rutaFicheroPDF);
-                    return null;
-                }
-
-                @Override
-                protected void done() {
-                    // Este código se ejecuta cuando la impresora ya recibió la orden
-                    JOptionPanePro.mostrarMensaje(PanelServicios.this, "Proceso Completado",
-                            "Orden guardada e impresa con éxito.", "INFO");
-                }
-            }.execute();
 
         } catch (Exception e) {
             e.printStackTrace();

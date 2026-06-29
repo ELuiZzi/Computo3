@@ -132,9 +132,11 @@ public class PanelFaltantes extends JPanel {
         int row = tabla.getSelectedRow();
         if (row == -1) return;
 
-        // Asumiendo que "Modelo" es la columna 2 (índice 2) según tu código anterior
-        // {"ID", "Producto", "Modelo", "Marca", ...}
-        Object valor = modelo.getValueAt(row, 2);
+        // EL FIX MÁGICO: Convertimos la fila visual a la fila real de la base de datos
+        int rowModelo = tabla.convertRowIndexToModel(row);
+
+        // Asumiendo que "Modelo" es la columna 2. (Nota que ahora usamos rowModelo)
+        Object valor = modelo.getValueAt(rowModelo, 2);
         String modeloTexto = (valor != null) ? valor.toString() : "";
 
         if (!modeloTexto.isEmpty()) {
