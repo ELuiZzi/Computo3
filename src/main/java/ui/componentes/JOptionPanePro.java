@@ -40,6 +40,24 @@ public class JOptionPanePro {
 
         dialog.pack();
         dialog.setLocationRelativeTo(parent);
+
+        // =======================================================
+        // NUEVO: Habilitar tecla ENTER para cerrar el mensaje
+        // =======================================================
+        javax.swing.KeyStroke enter = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0);
+        dialog.getRootPane().getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW).put(enter, "cerrarConEnter");
+
+        dialog.getRootPane().getActionMap().put("cerrarConEnter", new javax.swing.AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                // Se cierra con ENTER únicamente si es de tipo "INFO"
+                if (tipo.equalsIgnoreCase("INFO")) {
+                    dialog.dispose();
+                }
+            }
+        });
+        // =======================================================
+
         dialog.setVisible(true);
     }
 

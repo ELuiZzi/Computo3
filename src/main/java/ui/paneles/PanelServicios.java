@@ -48,13 +48,14 @@ public class PanelServicios extends JPanel {
     private JComboBox<String> cmbEstado, cmbTipoEquipo;
     private JPanel panelTintas;
     private JSlider slC, slM, slY, slK;
+    private JCheckBox chkAptoMantenimiento;
 
     // Variables Control
     private int idOrdenActual = -1;
     private final List<String> rutasImagenes = new ArrayList<>();
 
     private TablaPro tablaPagos;
-
+    private BotonPro btnGuardar;
     public PanelServicios() {
         setLayout(new BorderLayout());
         setBackground(Estilos.COLOR_FONDO);
@@ -217,6 +218,22 @@ public class PanelServicios extends JPanel {
         cmbTipoEquipo.addActionListener(e -> alternarPanelTintas());
 
         cmbEstado = new JComboBox<>(new String[]{"RECIBIDO", "DIAGNOSTICO", "EN REPARACION", "ESPERA REFACCION", "LISTO", "ENTREGADO"});
+// Supongamos que tu combobox se llama cmbEstadoOrden
+        cmbEstado.addActionListener(e -> {
+            String estado = cmbEstado.getSelectedItem().toString();
+
+            if (estado.equalsIgnoreCase("LISTO") || estado.equalsIgnoreCase("ENTREGADO")) {
+                chkAptoMantenimiento.setEnabled(true);
+                chkAptoMantenimiento.setSelected(true); // Sugerimos que sí por defecto
+            } else {
+                chkAptoMantenimiento.setEnabled(false);
+                chkAptoMantenimiento.setSelected(false);
+            }
+        });
+
+
+        chkAptoMantenimiento = new JCheckBox();
+        chkAptoMantenimiento.setEnabled(false);
 
         //Listeners
         // Agrega esto donde inicializas tus componentes en PanelServicios
@@ -318,6 +335,8 @@ public class PanelServicios extends JPanel {
         g.gridwidth=1;
         addLbl(pIzquierda, g, 0, 13, "ESTADO ACTUAL:"); g.gridx=1; pIzquierda.add(cmbEstado, g);
 
+        g.gridwidth=1;
+        addLbl(pIzquierda, g, 0, 14, "Apto para mantenimiento:"); g.gridx=1; pIzquierda.add(chkAptoMantenimiento, g);
 
         // =========================================================
         // COLUMNA DERECHA: FINANZAS E HISTORIAL
@@ -429,7 +448,7 @@ public class PanelServicios extends JPanel {
         JPanel pAcciones = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         pAcciones.setBackground(Estilos.COLOR_PANEL);
 
-        BotonPro btnGuardar = new BotonPro("GUARDER", "guardar.png", Estilos.COLOR_ACCENT, this::guardarOrden);
+        btnGuardar = new BotonPro("GUARDAR", "guardar.png", Estilos.COLOR_ACCENT, this::guardarOrden);
         BotonPro btnPDF = new BotonPro("PDF", "ticket.png", new Color(200, 50, 50), this::generarPDFFormulario);
         BotonPro btnAbonar = new BotonPro("$ ABONAR", Color.ORANGE, () -> cobrarConcepto("ABONO"));
         BotonPro btnLiquidar = new BotonPro("$ LIQUIDAR", new Color(46, 204, 113), () -> cobrarConcepto("LIQUIDACION"));
@@ -492,7 +511,24 @@ public class PanelServicios extends JPanel {
                 txtPass.setText(rs.getString("password_patron")); txtFalla.setText(rs.getString("falla_reportada"));
                 txtDiagnostico.setText(rs.getString("diagnostico_tecnico"));
                 txtCostoPresupuesto.setText(String.valueOf(rs.getDouble("costo_estimado")));
+
+                // Carga el estado de la orden en el ComboBox
                 cmbEstado.setSelectedItem(rs.getString("estado"));
+
+                // =========================================================
+                // NUEVO: Recuperar el validador del CRM de la Base de Datos
+                // =========================================================
+                boolean esApto = rs.getBoolean("apto_mantenimiento");
+                chkAptoMantenimiento.setSelected(esApto);
+
+                // Asegurarnos de que visualmente esté habilitado/deshabilitado correctamente
+                String estadoActual = rs.getString("estado");
+                if (estadoActual.equalsIgnoreCase("LISTO") || estadoActual.equalsIgnoreCase("ENTREGADO")) {
+                    chkAptoMantenimiento.setEnabled(true);
+                } else {
+                    chkAptoMantenimiento.setEnabled(false);
+                }
+                // =========================================================
 
                 // Cargar Tintas e Imagenes (Igual que antes)
                 String tintas = rs.getString("niveles_tinta");
@@ -702,7 +738,16 @@ public class PanelServicios extends JPanel {
 
         try {
             double monto = Double.parseDouble(input);
-            if (monto <= 0) return;
+
+            // NUEVA VALIDACIÓN UX
+            if (monto <= 0 && "LIQUIDACION".equals(concepto)) {
+                JOptionPanePro.mostrarMensaje(this, "Aviso",
+                        "El saldo de este equipo ya es $0.\nPara entregarlo, cambia el estado a 'ENTREGADO' y haz clic en Guardar.",
+                        "INFO");
+                return;
+            } else if (monto <= 0) {
+                return;
+            }
 
             try (Connection conn = ConexionBD.conectar()) {
                 conn.setAutoCommit(false);
@@ -725,7 +770,18 @@ public class PanelServicios extends JPanel {
 
                 // 3. Actualizar Estado si es Liquidación
                 if ("LIQUIDACION".equals(concepto)) {
-                    conn.prepareStatement("UPDATE ordenes_servicio SET estado='ENTREGADO' WHERE id=" + idOrdenActual).executeUpdate();
+
+                    // Leemos si la casilla del CRM está marcada en la interfaz
+                    boolean esApto = chkAptoMantenimiento.isSelected();
+
+                    // Actualizamos el estado, usamos CURRENT_DATE de MySQL para la fecha, y pasamos el validador CRM
+                    String sqlUpdate = "UPDATE ordenes_servicio SET estado='ENTREGADO', fecha_entrega=CURRENT_DATE, apto_mantenimiento=? WHERE id=?";
+                    PreparedStatement psU = conn.prepareStatement(sqlUpdate);
+                    psU.setBoolean(1, esApto);
+                    psU.setInt(2, idOrdenActual);
+                    psU.executeUpdate();
+
+                    // Sincronizamos la interfaz visual
                     cmbEstado.setSelectedItem("ENTREGADO");
                 }
 
@@ -759,16 +815,43 @@ public class PanelServicios extends JPanel {
             return;
         }
 
+        btnGuardar.setEstadoCargando(true, "Guardando...");
+
         try (Connection conn = ConexionBD.conectar()) {
             int idCliente = obtenerOInsertarCliente(conn);
             String tintas = slC.getValue() + "," + slM.getValue() + "," + slY.getValue() + "," + slK.getValue();
             String imgs = String.join(";", rutasImagenes);
 
+            // =========================================================
+            // NUEVO: 1. Capturar lógica del CRM (Fecha y Validador)
+            // Sustituye "cmbEstado" y "chkAptoMantenimiento" por los
+            // nombres reales de los componentes en tu interfaz
+            // =========================================================
+            String estadoActual = cmbEstado.getSelectedItem().toString();
+            boolean esApto = chkAptoMantenimiento.isSelected();
+            java.sql.Date fechaEntregaSql = null;
+
+            if (estadoActual.equalsIgnoreCase("Entregado/Terminado")) {
+                fechaEntregaSql = java.sql.Date.valueOf(java.time.LocalDate.now());
+            }
+            // =========================================================
+
             if (idOrdenActual == -1) {
                 // INSERTAR
-                String sql = "INSERT INTO ordenes_servicio (id_cliente, dispositivo, tipo_equipo, marca_modelo, password_patron, falla_reportada, diagnostico_tecnico, costo_estimado, anticipo, estado, niveles_tinta, rutas_imagenes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)";
+                // NUEVO: Se agregaron fecha_entrega y apto_mantenimiento al final de la consulta (14 parámetros en total)
+                String sql = "INSERT INTO ordenes_servicio (id_cliente, dispositivo, tipo_equipo, marca_modelo, password_patron, falla_reportada, diagnostico_tecnico, costo_estimado, anticipo, estado, niveles_tinta, rutas_imagenes, fecha_entrega, apto_mantenimiento) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
                 PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
-                llenarParams(ps, idCliente, tintas, imgs);
+
+                llenarParams(ps, idCliente, tintas, imgs); // Llena del parámetro 1 al 12
+
+                // NUEVO: Llenamos los parámetros 13 y 14
+                if (fechaEntregaSql != null) {
+                    ps.setDate(13, fechaEntregaSql);
+                } else {
+                    ps.setNull(13, java.sql.Types.DATE);
+                }
+                ps.setBoolean(14, esApto);
+
                 ps.executeUpdate();
                 ResultSet rs = ps.getGeneratedKeys();
                 if (rs.next()) idOrdenActual = rs.getInt(1); // Actualizamos la variable global
@@ -792,6 +875,8 @@ public class PanelServicios extends JPanel {
 
                     @Override
                     protected void done() {
+                        btnGuardar.setEstadoCargando(false, "");
+
                         // Este código se ejecuta cuando la impresora ya recibió la orden
                         JOptionPanePro.mostrarMensaje(PanelServicios.this, "Proceso Completado",
                                 "Orden guardada e impresa con éxito.", "INFO");
@@ -800,11 +885,24 @@ public class PanelServicios extends JPanel {
 
             } else {
                 // ACTUALIZAR
-                String sql = "UPDATE ordenes_servicio SET id_cliente=?, dispositivo=?, tipo_equipo=?, marca_modelo=?, password_patron=?, falla_reportada=?, diagnostico_tecnico=?, costo_estimado=?, anticipo=?, estado=?, niveles_tinta=?, rutas_imagenes=? WHERE id=?";
+                // NUEVO: Se agregaron fecha_entrega y apto_mantenimiento antes del WHERE
+                String sql = "UPDATE ordenes_servicio SET id_cliente=?, dispositivo=?, tipo_equipo=?, marca_modelo=?, password_patron=?, falla_reportada=?, diagnostico_tecnico=?, costo_estimado=?, anticipo=?, estado=?, niveles_tinta=?, rutas_imagenes=?, fecha_entrega=?, apto_mantenimiento=? WHERE id=?";
                 PreparedStatement ps = conn.prepareStatement(sql);
-                llenarParams(ps, idCliente, tintas, imgs);
-                ps.setInt(13, idOrdenActual);
+
+                llenarParams(ps, idCliente, tintas, imgs); // Llena del parámetro 1 al 12
+
+                // NUEVO: Llenamos los parámetros 13 y 14 (y desplazamos el ID al 15)
+                if (fechaEntregaSql != null) {
+                    ps.setDate(13, fechaEntregaSql);
+                } else {
+                    ps.setNull(13, java.sql.Types.DATE);
+                }
+
+                ps.setBoolean(14, esApto);
+                ps.setInt(15, idOrdenActual); // El ID de la orden se mueve a la posición 15
+
                 ps.executeUpdate();
+                btnGuardar.setEstadoCargando(false, "");
             }
 
             lblFolio.setText("FOLIO: " + idOrdenActual);
@@ -813,10 +911,9 @@ public class PanelServicios extends JPanel {
             cargarDatosOrden(idOrdenActual);
             cargarHistorialPagos(idOrdenActual);
 
-
-
         } catch (Exception e) {
             e.printStackTrace();
+            btnGuardar.setEstadoCargando(false, "");
             JOptionPanePro.mostrarMensaje(this, "Error", e.getMessage(), "ERROR");
         }
     }

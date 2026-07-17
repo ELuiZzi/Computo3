@@ -1,4 +1,7 @@
 target/
+recursos/
+ordenes/
+codigos_barras/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
