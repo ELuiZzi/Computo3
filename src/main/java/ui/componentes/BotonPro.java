@@ -130,4 +130,13 @@ public class BotonPro extends JPanel {
             setCursor(new Cursor(Cursor.HAND_CURSOR)); // Regresa la manita
         }
     }
+
+    @Override
+    public void setFont(Font font) {
+        super.setFont(font);
+        // Validamos que lblContenido ya exista, porque setFont se llama muy temprano en Java
+        if (lblContenido != null) {
+            lblContenido.setFont(font);
+        }
+    }
 }

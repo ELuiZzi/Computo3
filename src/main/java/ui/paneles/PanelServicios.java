@@ -136,6 +136,32 @@ public class PanelServicios extends JPanel {
             public boolean isCellEditable(int r, int c) { return false; }
         };
         tablaOrdenes = new TablaPro(modeloOrdenes);
+        
+        // Renderizador personalizado para colores de filas según estado
+        tablaOrdenes.setDefaultRenderer(Object.class, new javax.swing.table.DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                setHorizontalAlignment(SwingConstants.CENTER);
+                if (isSelected) {
+                    c.setBackground(Estilos.COLOR_ACCENT);
+                    c.setForeground(Color.WHITE);
+                } else {
+                    String estado = (String) table.getModel().getValueAt(table.convertRowIndexToModel(row), 4);
+                    if ("RECIBIDO".equals(estado)) {
+                        c.setBackground(new Color(20, 50, 90)); // Azul
+                    } else if ("LISTO".equals(estado)) {
+                        c.setBackground(new Color(20, 70, 30)); // Verde
+                    } else if ("ENTREGADO".equals(estado)) {
+                        c.setBackground(row % 2 == 0 ? Estilos.COLOR_PANEL : new Color(40, 48, 70)); // Normal (Historial)
+                    } else {
+                        c.setBackground(new Color(90, 55, 20)); // Naranja (Otros estados)
+                    }
+                    c.setForeground(Color.WHITE);
+                }
+                return c;
+            }
+        });
 
         // Popup y Eventos
         JPopupMenu popup = new JPopupMenu();
@@ -394,8 +420,48 @@ public class PanelServicios extends JPanel {
             cargarHistorialPagos(idOrdenActual);
         });
 
+        JMenuItem itemEspecial = new JMenuItem("⭐ Agregar Pieza Especial");
+        itemEspecial.addActionListener(e -> {
+            if (idOrdenActual == -1) { JOptionPanePro.mostrarMensaje(this, "Aviso", "Guarda la orden primero.", "ADVERTENCIA"); return; }
+            
+            JTextField txtNombre = new JTextField();
+            JTextField txtPrecio = new JTextField();
+            Object[] message = {
+                "Nombre de la Pieza (ej. Teclado Laptop):", txtNombre,
+                "Costo ($):", txtPrecio
+            };
+            
+            int option = JOptionPane.showConfirmDialog(this, message, "Agregar Pieza Especial", JOptionPane.OK_CANCEL_OPTION);
+            if (option == JOptionPane.OK_OPTION) {
+                String nombre = txtNombre.getText().trim();
+                String precioStr = txtPrecio.getText().trim();
+                
+                if (nombre.isEmpty() || precioStr.isEmpty()) {
+                    JOptionPanePro.mostrarMensaje(this, "Error", "Debes llenar todos los campos.", "ERROR");
+                    return;
+                }
+                
+                try {
+                    double precio = Double.parseDouble(precioStr);
+                    try (Connection conn = ConexionBD.conectar();
+                         PreparedStatement ps = conn.prepareStatement("INSERT INTO cargos_orden (id_orden, concepto, monto) VALUES (?, ?, ?)")) {
+                        ps.setInt(1, idOrdenActual);
+                        ps.setString(2, nombre.toUpperCase());
+                        ps.setDouble(3, precio);
+                        ps.executeUpdate();
+                        cargarHistorialPagos(idOrdenActual);
+                    }
+                } catch (NumberFormatException ex) {
+                    JOptionPanePro.mostrarMensaje(this, "Error", "El precio debe ser un número válido.", "ERROR");
+                } catch (Exception ex) {
+                    servicios.LoggerPro.registrar("ERROR_DB", "Fallo al agregar pieza especial: " + ex.getMessage());
+                }
+            }
+        });
+
         menuCargos.add(itemServicio);
         menuCargos.add(itemProducto);
+        menuCargos.add(itemEspecial);
 
         // --- 2. Creamos el botón (Le añadimos una flechita ▼ visual) ---
         BotonPro btnAddCargo = new BotonPro("➕ Agregar Costo ▼", new Color(41, 98, 255), () -> {});
@@ -490,8 +556,9 @@ public class PanelServicios extends JPanel {
     }
 
     private int obtenerSiguienteFolio() {
-        try (Connection c = ConexionBD.conectar()) {
-            ResultSet rs = c.createStatement().executeQuery("SELECT AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'punto_venta' AND TABLE_NAME = 'ordenes_servicio'");
+        try (Connection c = ConexionBD.conectar();
+             java.sql.Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'punto_venta' AND TABLE_NAME = 'ordenes_servicio'")) {
             if(rs.next()) return rs.getInt(1);
         } catch(Exception ignored){}
         return 0;
@@ -499,11 +566,11 @@ public class PanelServicios extends JPanel {
 
     // --- CARGAR DATOS Y PAGOS ---
     private void cargarDatosOrden(int id) {
-        try (Connection conn = ConexionBD.conectar()) {
-            PreparedStatement ps = conn.prepareStatement("SELECT o.*, c.nombre, c.telefono FROM ordenes_servicio o JOIN clientes c ON o.id_cliente = c.id WHERE o.id = ?");
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement("SELECT o.*, c.nombre, c.telefono FROM ordenes_servicio o JOIN clientes c ON o.id_cliente = c.id WHERE o.id = ?")) {
             ps.setInt(1, id);
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
                 lblFolio.setText("FOLIO: " + id);
                 txtNombre.setText(rs.getString("nombre")); txtTelefono.setText(rs.getString("telefono"));
                 cmbTipoEquipo.setSelectedItem(rs.getString("tipo_equipo")); alternarPanelTintas();
@@ -533,10 +600,12 @@ public class PanelServicios extends JPanel {
                 // Cargar Tintas e Imagenes (Igual que antes)
                 String tintas = rs.getString("niveles_tinta");
                 if (tintas != null && !tintas.isEmpty()) { String[] vals = tintas.split(","); if(vals.length==4){ slC.setValue(Integer.parseInt(vals[0])); slM.setValue(Integer.parseInt(vals[1])); slY.setValue(Integer.parseInt(vals[2])); slK.setValue(Integer.parseInt(vals[3])); }}
-                String imgs = rs.getString("rutas_imagenes");
-                if(imgs != null && !imgs.isEmpty()) { Collections.addAll(rutasImagenes, imgs.split(";")); lblFotosCount.setText(rutasImagenes.size() + " imgs"); }
+                }
             }
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { 
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelServicios.cargarDatosOrden: " + e.getMessage());
+            e.printStackTrace(); 
+        }
     }
 
     private class Movimiento implements Comparable<Movimiento> {
@@ -565,17 +634,19 @@ public class PanelServicios extends JPanel {
         try (Connection conn = ConexionBD.conectar()) {
             // 1. OBTENER CARGOS (Deuda)
             String sqlCargos = "SELECT id, fecha, concepto, monto FROM cargos_orden WHERE id_orden = ?";
-            PreparedStatement psC = conn.prepareStatement(sqlCargos);
-            psC.setInt(1, idOrden);
-            ResultSet rsC = psC.executeQuery();
-            while(rsC.next()) {
-                movimientos.add(new Movimiento(
-                        rsC.getTimestamp("fecha"),
-                        rsC.getString("concepto"),
-                        rsC.getDouble("monto"),
-                        "CARGO",
-                        rsC.getInt("id")
-                ));
+            try (PreparedStatement psC = conn.prepareStatement(sqlCargos)) {
+                psC.setInt(1, idOrden);
+                try (ResultSet rsC = psC.executeQuery()) {
+                    while(rsC.next()) {
+                        movimientos.add(new Movimiento(
+                                rsC.getTimestamp("fecha"),
+                                rsC.getString("concepto"),
+                                rsC.getDouble("monto"),
+                                "CARGO",
+                                rsC.getInt("id")
+                        ));
+                    }
+                }
             }
 
             // 2. OBTENER ABONOS (Pagos en Ventas)
@@ -583,19 +654,24 @@ public class PanelServicios extends JPanel {
             String sqlAbonos = "SELECT v.id, v.fecha, d.descripcion, v.total_venta " +
                     "FROM ventas v JOIN detalle_venta d ON v.id = d.id_venta " +
                     "WHERE v.id_orden_servicio = ?";
-            PreparedStatement psA = conn.prepareStatement(sqlAbonos);
-            psA.setInt(1, idOrden);
-            ResultSet rsA = psA.executeQuery();
-            while(rsA.next()) {
-                movimientos.add(new Movimiento(
-                        rsA.getTimestamp("fecha"),
-                        rsA.getString("descripcion"),
-                        rsA.getDouble("total_venta"),
-                        "ABONO",
-                        rsA.getInt("id") // ID de venta
-                ));
+            try (PreparedStatement psA = conn.prepareStatement(sqlAbonos)) {
+                psA.setInt(1, idOrden);
+                try (ResultSet rsA = psA.executeQuery()) {
+                    while(rsA.next()) {
+                        movimientos.add(new Movimiento(
+                                rsA.getTimestamp("fecha"),
+                                rsA.getString("descripcion"),
+                                rsA.getDouble("total_venta"),
+                                "ABONO",
+                                rsA.getInt("id") // ID de venta
+                        ));
+                    }
+                }
             }
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { 
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelServicios.cargarHistorialPagos: " + e.getMessage());
+            e.printStackTrace(); 
+        }
 
         // 3. ORDENAR CRONOLÓGICAMENTE
         Collections.sort(movimientos);
@@ -658,27 +734,32 @@ public class PanelServicios extends JPanel {
                     if ("CARGO".equals(tipo)) {
                         // A. Consultar si tiene producto vinculado
                         String sqlBusca = "SELECT id_producto, cantidad FROM cargos_orden WHERE id = ?";
-                        PreparedStatement psB = conn.prepareStatement(sqlBusca);
-                        psB.setInt(1, idRef);
-                        ResultSet rsB = psB.executeQuery();
+                        try (PreparedStatement psB = conn.prepareStatement(sqlBusca)) {
+                            psB.setInt(1, idRef);
+                            try (ResultSet rsB = psB.executeQuery()) {
+                                if (rsB.next()) {
+                                    int idProd = rsB.getInt("id_producto");
+                                    int cant = rsB.getInt("cantidad");
 
-                        if (rsB.next()) {
-                            int idProd = rsB.getInt("id_producto");
-                            int cant = rsB.getInt("cantidad");
-
-                            // B. Si es un producto (id > 0), devolvemos las unidades al estante
-                            if (idProd > 0) {
-                                conn.createStatement().executeUpdate(
-                                        "UPDATE productos SET stock = stock + " + cant + " WHERE id = " + idProd
-                                );
+                                    // B. Si es un producto (id > 0), devolvemos las unidades al estante
+                                    if (idProd > 0) {
+                                        try (java.sql.Statement st1 = conn.createStatement()) {
+                                            st1.executeUpdate("UPDATE productos SET stock = stock + " + cant + " WHERE id = " + idProd);
+                                        }
+                                    }
+                                }
                             }
                         }
                         // C. Borrar el cargo
-                        conn.createStatement().executeUpdate("DELETE FROM cargos_orden WHERE id = " + idRef);
+                        try (java.sql.Statement st2 = conn.createStatement()) {
+                            st2.executeUpdate("DELETE FROM cargos_orden WHERE id = " + idRef);
+                        }
                     } else {
                         // Lógica para ABONOS (Ventas)
-                        conn.createStatement().executeUpdate("DELETE FROM ventas WHERE id = " + idRef);
-                        conn.createStatement().executeUpdate("DELETE FROM detalle_venta WHERE id_venta = " + idRef);
+                        try (java.sql.Statement st3 = conn.createStatement()) {
+                            st3.executeUpdate("DELETE FROM ventas WHERE id = " + idRef);
+                            st3.executeUpdate("DELETE FROM detalle_venta WHERE id_venta = " + idRef);
+                        }
                     }
 
                     conn.commit();
@@ -686,9 +767,13 @@ public class PanelServicios extends JPanel {
                     ToastPro.show("Movimiento eliminado e inventario actualizado", "INFO");
                 } catch (Exception ex) {
                     conn.rollback();
+                    servicios.LoggerPro.registrar("ERROR_DB", "Transacción fallida en PanelServicios.eliminarMovimiento: " + ex.getMessage());
                     throw ex;
                 }
-            } catch (Exception e) { e.printStackTrace(); }
+            } catch (Exception e) { 
+                servicios.LoggerPro.registrar("ERROR_DB", "Fallo de conexión en PanelServicios.eliminarMovimiento: " + e.getMessage());
+                e.printStackTrace(); 
+            }
         }
     }
 
@@ -752,34 +837,41 @@ public class PanelServicios extends JPanel {
             try (Connection conn = ConexionBD.conectar()) {
                 conn.setAutoCommit(false);
 
+                int idVenta = -1;
                 // 1. Insertar Venta CON VINCULACIÓN (id_orden_servicio)
                 String sqlVenta = "INSERT INTO ventas (total_venta, ganancia_total, tipo_venta, id_orden_servicio) VALUES (?, ?, 'SERVICIO', ?)";
-                PreparedStatement psV = conn.prepareStatement(sqlVenta, Statement.RETURN_GENERATED_KEYS);
-                psV.setDouble(1, monto); psV.setDouble(2, monto); psV.setInt(3, idOrdenActual);
-                psV.executeUpdate();
+                try (PreparedStatement psV = conn.prepareStatement(sqlVenta, Statement.RETURN_GENERATED_KEYS)) {
+                    psV.setDouble(1, monto); psV.setDouble(2, monto); psV.setInt(3, idOrdenActual);
+                    psV.executeUpdate();
 
-                ResultSet rs = psV.getGeneratedKeys(); rs.next(); int idVenta = rs.getInt(1);
+                    try (ResultSet rs = psV.getGeneratedKeys()) {
+                        if (rs.next()) {
+                            idVenta = rs.getInt(1);
+                        }
+                    }
+                }
 
                 // 2. Detalle
                 String desc = concepto + ": " + txtDispositivo.getText() + " (" + txtNombre.getText() + ")";
                 if("LIQUIDACION".equals(concepto)) desc = "LIQUIDACIÓN FINAL: " + txtDispositivo.getText();
 
-                PreparedStatement psD = conn.prepareStatement("INSERT INTO detalle_venta (id_venta, id_producto, cantidad, subtotal, descripcion) VALUES (?, NULL, 1, ?, ?)");
-                psD.setInt(1, idVenta); psD.setDouble(2, monto); psD.setString(3, desc.toUpperCase());
-                psD.executeUpdate();
+                try (PreparedStatement psD = conn.prepareStatement("INSERT INTO detalle_venta (id_venta, id_producto, cantidad, subtotal, descripcion) VALUES (?, NULL, 1, ?, ?)")) {
+                    psD.setInt(1, idVenta); psD.setDouble(2, monto); psD.setString(3, desc.toUpperCase());
+                    psD.executeUpdate();
+                }
 
                 // 3. Actualizar Estado si es Liquidación
                 if ("LIQUIDACION".equals(concepto)) {
-
                     // Leemos si la casilla del CRM está marcada en la interfaz
                     boolean esApto = chkAptoMantenimiento.isSelected();
 
                     // Actualizamos el estado, usamos CURRENT_DATE de MySQL para la fecha, y pasamos el validador CRM
                     String sqlUpdate = "UPDATE ordenes_servicio SET estado='ENTREGADO', fecha_entrega=CURRENT_DATE, apto_mantenimiento=? WHERE id=?";
-                    PreparedStatement psU = conn.prepareStatement(sqlUpdate);
-                    psU.setBoolean(1, esApto);
-                    psU.setInt(2, idOrdenActual);
-                    psU.executeUpdate();
+                    try (PreparedStatement psU = conn.prepareStatement(sqlUpdate)) {
+                        psU.setBoolean(1, esApto);
+                        psU.setInt(2, idOrdenActual);
+                        psU.executeUpdate();
+                    }
 
                     // Sincronizamos la interfaz visual
                     cmbEstado.setSelectedItem("ENTREGADO");
@@ -798,8 +890,14 @@ public class PanelServicios extends JPanel {
                 JOptionPanePro.mostrarMensaje(this, "Éxito", "Cobro registrado.", "INFO");
                 cargarHistorialPagos(idOrdenActual); // Refrescar tabla pagos
 
+            } catch (Exception ex) {
+                servicios.LoggerPro.registrar("ERROR_DB", "Fallo al cobrar concepto en PanelServicios: " + ex.getMessage());
+                ex.printStackTrace();
             }
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { 
+            servicios.LoggerPro.registrar("ERROR", "Error en cobro: " + e.getMessage());
+            e.printStackTrace(); 
+        }
     }
 
 
@@ -1055,7 +1153,8 @@ public class PanelServicios extends JPanel {
         else if ("HISTORIAL".equals(filtro)) sql += "WHERE o.estado = 'ENTREGADO' ";
         else
             sql += "WHERE (c.nombre LIKE '%" + txtBuscar.getText() + "%' OR o.id LIKE '%" + txtBuscar.getText() + "%') ";
-        sql += "ORDER BY o.id DESC";
+            
+        sql += "ORDER BY CASE WHEN o.estado = 'RECIBIDO' THEN 1 WHEN o.estado = 'LISTO' THEN 3 WHEN o.estado = 'ENTREGADO' THEN 4 ELSE 2 END ASC, o.id DESC";
 
         try (Connection c = ConexionBD.conectar(); ResultSet rs = c.createStatement().executeQuery(sql)) {
             while (rs.next())

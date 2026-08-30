@@ -51,6 +51,16 @@ public class PanelConfiguracion extends JPanel {
         }
 
         add(tabsConfig, BorderLayout.CENTER);
+        
+        // PANEL INFERIOR PARA VERSIÓN
+        JPanel pSur = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        pSur.setBackground(Estilos.COLOR_FONDO);
+        JLabel lblVersion = new JLabel("v" + obtenerVersion());
+        lblVersion.setForeground(Color.WHITE);
+        lblVersion.setFont(new Font("Segoe UI", Font.ITALIC, 11));
+        pSur.add(lblVersion);
+        add(pSur, BorderLayout.SOUTH);
+        
         cargarConfiguracionGlobal();
     }
 
@@ -219,9 +229,8 @@ public class PanelConfiguracion extends JPanel {
             return;
         }
 
-        try (Connection conn = ConexionBD.conectar()) {
-            String sql = "UPDATE usuarios_sistema SET usuario = ?, password = ?, genero = ? WHERE usuario = ?";
-            PreparedStatement ps = conn.prepareStatement(sql);
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement("UPDATE usuarios_sistema SET usuario = ?, password = ?, genero = ? WHERE usuario = ?")) {
             ps.setString(1, nuevoUser);
             ps.setString(2, nuevoPass);
             ps.setString(3, nuevoGenero);
@@ -240,6 +249,7 @@ public class PanelConfiguracion extends JPanel {
                 JOptionPanePro.mostrarMensaje(this, "Error", "No se pudo actualizar el perfil.", "ERROR");
             }
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelConfiguracion.actualizarPerfil: " + e.getMessage());
             JOptionPanePro.mostrarMensaje(this, "Error BD", e.getMessage(), "ERROR");
         }
     }
@@ -255,9 +265,8 @@ public class PanelConfiguracion extends JPanel {
             return;
         }
 
-        try (Connection conn = ConexionBD.conectar()) {
-            String sql = "INSERT INTO usuarios_sistema (usuario, password, rol, genero) VALUES (?, ?, ?, ?)";
-            PreparedStatement ps = conn.prepareStatement(sql);
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement("INSERT INTO usuarios_sistema (usuario, password, rol, genero) VALUES (?, ?, ?, ?)")) {
             ps.setString(1, u);
             ps.setString(2, p);
             ps.setString(3, r);
@@ -268,6 +277,7 @@ public class PanelConfiguracion extends JPanel {
             txtNuevoUser.setText("");
             txtNuevoPass.setText("");
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelConfiguracion.guardarNuevoUsuario: " + e.getMessage());
             JOptionPanePro.mostrarMensaje(this, "Error", "Error al crear: Probablemente el usuario ya existe.\nDetalle: " + e.getMessage(), "ERROR");
         }
     }
@@ -294,4 +304,31 @@ public class PanelConfiguracion extends JPanel {
 
     private JTextField input() { JTextField t = new JTextField(15); Estilos.estilizarInput(t); return t; }
     private void addLbl(JPanel p, GridBagConstraints g, int x, int y, String t) { g.gridx=x; g.gridy=y; JLabel l=new JLabel(t); l.setForeground(Color.WHITE); p.add(l,g); }
+    
+    private String obtenerVersion() {
+        // Intento 1: Entorno de Desarrollo (IntelliJ) leyendo el pom.xml
+        File pomFile = new File("pom.xml");
+        if (pomFile.exists()) {
+            try (BufferedReader br = new BufferedReader(new FileReader(pomFile))) {
+                String linea;
+                while ((linea = br.readLine()) != null) {
+                    if (linea.trim().startsWith("<version>")) {
+                        return linea.trim().replace("<version>", "").replace("</version>", "");
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        
+        // Intento 2: Entorno de Producción (JAR compilado) leyendo los properties que inyecta Maven
+        try (InputStream is = getClass().getResourceAsStream("/META-INF/maven/org.example/Computo2/pom.properties")) {
+            if (is != null) {
+                Properties p = new Properties();
+                p.load(is);
+                String v = p.getProperty("version");
+                if (v != null) return v;
+            }
+        } catch (Exception ignored) {}
+        
+        return "1.0.0 (Desconocido)";
+    }
 }

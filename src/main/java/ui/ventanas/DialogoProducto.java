@@ -229,49 +229,51 @@ public class DialogoProducto extends JDialog {
         try (Connection conn = ConexionBD.conectar();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, idProductoActual);
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
-                // Mapeo exacto con tu esquema de BD
-                txtCodigo.setText(rs.getString("codigo_barras") != null ? rs.getString("codigo_barras") : "");
-                txtNombre.setText(rs.getString("nombre"));
-                txtModelo.setText(rs.getString("modelo"));
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    // Mapeo exacto con tu esquema de BD
+                    txtCodigo.setText(rs.getString("codigo_barras") != null ? rs.getString("codigo_barras") : "");
+                    txtNombre.setText(rs.getString("nombre"));
+                    txtModelo.setText(rs.getString("modelo"));
 
-                cmbMarca.setSelectedItem(rs.getString("marca"));
-                cmbCategoria.setSelectedItem(rs.getString("categoria"));
-                cmbProveedor.setSelectedItem(rs.getString("proveedor"));
+                    cmbMarca.setSelectedItem(rs.getString("marca"));
+                    cmbCategoria.setSelectedItem(rs.getString("categoria"));
+                    cmbProveedor.setSelectedItem(rs.getString("proveedor"));
 
-                txtCosto.setText(String.valueOf(rs.getDouble("costo")));
-                txtPrecio.setText(String.valueOf(rs.getDouble("precio")));
-                txtStock.setText(String.valueOf(rs.getInt("stock")));
+                    txtCosto.setText(String.valueOf(rs.getDouble("costo")));
+                    txtPrecio.setText(String.valueOf(rs.getDouble("precio")));
+                    txtStock.setText(String.valueOf(rs.getInt("stock")));
 
-                txtMercadoMin.setText(String.valueOf(rs.getDouble("precio_mercado_min")));
-                txtMercadoProm.setText(String.valueOf(rs.getDouble("precio_mercado_prom")));
-                txtMercadoMax.setText(String.valueOf(rs.getDouble("precio_mercado_max")));
+                    txtMercadoMin.setText(String.valueOf(rs.getDouble("precio_mercado_min")));
+                    txtMercadoProm.setText(String.valueOf(rs.getDouble("precio_mercado_prom")));
+                    txtMercadoMax.setText(String.valueOf(rs.getDouble("precio_mercado_max")));
 
-                // Actualizar visualmente el margen y la explicación del algoritmo
-                if (rs.getDouble("costo") > 0) {
-                    double costo = rs.getDouble("costo");
-                    double venta = rs.getDouble("precio");
+                    // Actualizar visualmente el margen y la explicación del algoritmo
+                    if (rs.getDouble("costo") > 0) {
+                        double costo = rs.getDouble("costo");
+                        double venta = rs.getDouble("precio");
 
-                    double mercadoMin = rs.getDouble("precio_mercado_min");
-                    double mercadoProm = rs.getDouble("precio_mercado_prom");
-                    double mercadoMax = rs.getDouble("precio_mercado_max");
-                    String categoria = rs.getString("categoria");
+                        double mercadoMin = rs.getDouble("precio_mercado_min");
+                        double mercadoProm = rs.getDouble("precio_mercado_prom");
+                        double mercadoMax = rs.getDouble("precio_mercado_max");
+                        String categoria = rs.getString("categoria");
 
-                    // Usar el margen guardado en BD o calcularlo
-                    double margen = rs.getDouble("margen_ganancia");
-                    lblMargenCalc.setText("Margen: " + String.format("%.2f", margen) + "%");
+                        // Usar el margen guardado en BD o calcularlo
+                        double margen = rs.getDouble("margen_ganancia");
+                        lblMargenCalc.setText("Margen: " + String.format("%.2f", margen) + "%");
 
-                    try {
-                        String catSegura = (categoria != null && !categoria.isEmpty()) ? categoria : "Hardware";
-                        servicios.AlgoritmoPrecios.ResultadoPrecio res = servicios.AlgoritmoPrecios.calcular(catSegura, costo, mercadoMin, mercadoProm, mercadoMax);
-                        lblMargenCalc.setToolTipText("Estrategia: " + res.explicacion);
-                    } catch (Exception e) {
-                        lblMargenCalc.setToolTipText("Datos cargados desde BD.");
+                        try {
+                            String catSegura = (categoria != null && !categoria.isEmpty()) ? categoria : "Hardware";
+                            servicios.AlgoritmoPrecios.ResultadoPrecio res = servicios.AlgoritmoPrecios.calcular(catSegura, costo, mercadoMin, mercadoProm, mercadoMax);
+                            lblMargenCalc.setToolTipText("Estrategia: " + res.explicacion);
+                        } catch (Exception e) {
+                            lblMargenCalc.setToolTipText("Datos cargados desde BD.");
+                        }
                     }
                 }
             }
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en DialogoProducto.cargarDatosDesdeBD: " + e.getMessage());
             e.printStackTrace();
             JOptionPanePro.mostrarMensaje(this, "Error de Carga", "Fallo al leer la BD: " + e.getMessage(), "ERROR");
         }
@@ -342,6 +344,7 @@ public class DialogoProducto extends JDialog {
             dispose();
 
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en DialogoProducto.guardarOActualizar: " + e.getMessage());
             e.printStackTrace();
             JOptionPanePro.mostrarMensaje(this, "Error BD", "Fallo al guardar: " + e.getMessage(), "ERROR");
         }
@@ -479,12 +482,13 @@ public class DialogoProducto extends JDialog {
                  PreparedStatement ps = conn.prepareStatement("SELECT count(*) FROM usuarios_sistema WHERE password = ? AND (rol = 'admin' OR rol = 'Administrador')")) {
 
                 ps.setString(1, pinIngresado);
-                ResultSet rs = ps.executeQuery();
-
-                if (rs.next() && rs.getInt(1) > 0) {
-                    esAdminValido = true; // El PIN existe y pertenece a un admin
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next() && rs.getInt(1) > 0) {
+                        esAdminValido = true; // El PIN existe y pertenece a un admin
+                    }
                 }
             } catch (Exception ex) {
+                servicios.LoggerPro.registrar("ERROR_DB", "Fallo en DialogoProducto.abrirAjusteStockAdmin (validar admin): " + ex.getMessage());
                 ex.printStackTrace();
                 JOptionPanePro.mostrarMensaje(this, "Error BD", "Fallo al validar las credenciales.", "ERROR");
                 return; // Salimos para no actualizar si hubo error de conexión
@@ -516,6 +520,7 @@ public class DialogoProducto extends JDialog {
                 } catch (NumberFormatException ex) {
                     JOptionPanePro.mostrarMensaje(this, "Error numérico", "Ingresa una cantidad válida.", "ERROR");
                 } catch (Exception ex) {
+                    servicios.LoggerPro.registrar("ERROR_DB", "Fallo en DialogoProducto.abrirAjusteStockAdmin (update stock): " + ex.getMessage());
                     ex.printStackTrace();
                     JOptionPanePro.mostrarMensaje(this, "Error BD", "Fallo al actualizar el stock.", "ERROR");
                 }
@@ -533,18 +538,21 @@ public class DialogoProducto extends JDialog {
              java.sql.Statement s = c.createStatement()) {
 
             // 1. Cargar Proveedores (Evitando vacíos o nulos)
-            ResultSet rsProv = s.executeQuery("SELECT DISTINCT proveedor FROM productos WHERE proveedor IS NOT NULL AND proveedor != ''");
-            while (rsProv.next()) {
-                cmbProveedor.addItem(rsProv.getString(1));
+            try (ResultSet rsProv = s.executeQuery("SELECT DISTINCT proveedor FROM productos WHERE proveedor IS NOT NULL AND proveedor != ''")) {
+                while (rsProv.next()) {
+                    cmbProveedor.addItem(rsProv.getString(1));
+                }
             }
 
             // 2. Cargar Marcas (Evitando vacíos o nulos)
-            ResultSet rsMarca = s.executeQuery("SELECT DISTINCT marca FROM productos WHERE marca IS NOT NULL AND marca != ''");
-            while (rsMarca.next()) {
-                cmbMarca.addItem(rsMarca.getString(1));
+            try (ResultSet rsMarca = s.executeQuery("SELECT DISTINCT marca FROM productos WHERE marca IS NOT NULL AND marca != ''")) {
+                while (rsMarca.next()) {
+                    cmbMarca.addItem(rsMarca.getString(1));
+                }
             }
 
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en DialogoProducto.cargarCombosDeBD: " + e.getMessage());
             e.printStackTrace();
         }
 

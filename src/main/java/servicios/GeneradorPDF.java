@@ -4,8 +4,13 @@ import com.itextpdf.text.*;
 import com.itextpdf.text.pdf.*;
 import com.itextpdf.text.pdf.draw.LineSeparator;
 import java.io.FileOutputStream;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import config.ConexionBD;
+
 
 public class GeneradorPDF {
 
@@ -154,5 +159,138 @@ public class GeneradorPDF {
         cell.setHorizontalAlignment(Element.ALIGN_CENTER);
         cell.setPadding(8);
         tabla.addCell(cell);
+    }
+
+    // =========================================================================
+    // NUEVO MÓDULO: INTELIGENCIA DE NEGOCIOS (ROTACIÓN Y DEAD STOCK)
+    // =========================================================================
+
+    public static void generarReporteRotacion(String rutaDestino, int mes, int anio) throws Exception {
+        Document documento = new Document(PageSize.A4);
+
+        // Array simple para obtener el nombre del mes
+        String[] nombresMeses = {"Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+                "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"};
+        String nombreMes = nombresMeses[mes - 1];
+
+        try (Connection conn = ConexionBD.conectar()) {
+            PdfWriter.getInstance(documento, new FileOutputStream(rutaDestino));
+            documento.open();
+
+            // =========================================================
+            // PÁGINA 1: REPORTE MENSUAL (Mes seleccionado)
+            // =========================================================
+            Font fuenteTitulo = new Font(Font.FontFamily.HELVETICA, 18, Font.BOLD);
+            Paragraph tituloMensual = new Paragraph("Análisis de Rotación - " + nombreMes + " " + anio, fuenteTitulo);
+            tituloMensual.setAlignment(Element.ALIGN_CENTER);
+            tituloMensual.setSpacingAfter(20);
+            documento.add(tituloMensual);
+
+            // 1. MÁS VENDIDOS (MES)
+            documento.add(crearSubtitulo("Top 15 - Productos Más Vendidos del Mes", new BaseColor(46, 204, 113)));
+            documento.add(generarTablaRotacion(conn,
+                    "SELECT p.id, p.nombre, SUM(d.cantidad) as unidades " +
+                            "FROM productos p " +
+                            "JOIN detalle_venta d ON p.id = d.id_producto " +
+                            "JOIN ventas v ON d.id_venta = v.id " +
+                            "WHERE MONTH(v.fecha) = ? AND YEAR(v.fecha) = ? " +
+                            "GROUP BY p.id ORDER BY unidades DESC LIMIT 15",
+                    "Unidades Vendidas", mes, anio));
+
+            // 2. MENOS VENDIDOS (MES)
+            documento.add(crearSubtitulo("Top 15 - Baja Rotación en el Mes", new BaseColor(255, 140, 0)));
+            documento.add(generarTablaRotacion(conn,
+                    "SELECT p.id, p.nombre, SUM(d.cantidad) as unidades " +
+                            "FROM productos p " +
+                            "JOIN detalle_venta d ON p.id = d.id_producto " +
+                            "JOIN ventas v ON d.id_venta = v.id " +
+                            "WHERE MONTH(v.fecha) = ? AND YEAR(v.fecha) = ? " +
+                            "GROUP BY p.id ORDER BY unidades ASC LIMIT 15",
+                    "Unidades Vendidas", mes, anio));
+
+            // Nota: Se eliminó el "Dead Stock" mensual por ser redundante.
+
+            // =========================================================
+            // PÁGINA 2: REPORTE HISTÓRICO (Global)
+            // =========================================================
+            documento.newPage(); // Salto de página
+
+            Paragraph tituloHistorico = new Paragraph("Análisis Histórico Global (Todo el tiempo)", fuenteTitulo);
+            tituloHistorico.setAlignment(Element.ALIGN_CENTER);
+            tituloHistorico.setSpacingAfter(20);
+            documento.add(tituloHistorico);
+
+            // 1. MÁS VENDIDOS (HISTÓRICO)
+            documento.add(crearSubtitulo("Top 15 - Productos Más Vendidos", new BaseColor(46, 204, 113)));
+            documento.add(generarTablaRotacion(conn,
+                    "SELECT p.id, p.nombre, SUM(d.cantidad) as unidades " +
+                            "FROM productos p JOIN detalle_venta d ON p.id = d.id_producto " +
+                            "GROUP BY p.id ORDER BY unidades DESC LIMIT 15",
+                    "Unidades Totales"));
+
+            // 2. MENOS VENDIDOS (HISTÓRICO)
+            documento.add(crearSubtitulo("Top 15 - Baja Rotación (Al menos 1 venta)", new BaseColor(255, 140, 0)));
+            documento.add(generarTablaRotacion(conn,
+                    "SELECT p.id, p.nombre, SUM(d.cantidad) as unidades " +
+                            "FROM productos p JOIN detalle_venta d ON p.id = d.id_producto " +
+                            "GROUP BY p.id ORDER BY unidades ASC LIMIT 15",
+                    "Unidades Totales"));
+
+            // 3. DEAD STOCK (HISTÓRICO - ESTE ES EL QUE IMPORTA)
+            documento.add(crearSubtitulo("Dead Stock Histórico (NUNCA VENDIDOS)", new BaseColor(231, 76, 60)));
+            documento.add(generarTablaRotacion(conn,
+                    "SELECT p.id, p.nombre, p.stock as unidades " +
+                            "FROM productos p LEFT JOIN detalle_venta d ON p.id = d.id_producto " +
+                            "WHERE d.id_producto IS NULL ORDER BY p.nombre ASC",
+                    "Stock Estancado"));
+
+            documento.close();
+        }
+    }
+    private static Paragraph crearSubtitulo(String texto, BaseColor color) {
+        Font fuente = new Font(Font.FontFamily.HELVETICA, 14, Font.BOLD, color);
+        Paragraph p = new Paragraph(texto, fuente);
+        p.setSpacingBefore(15);
+        p.setSpacingAfter(10);
+        return p;
+    }
+
+    // ACTUALIZACIÓN MAGISTRAL: Agregamos "Object... parametros" para inyectar variables de forma segura
+    private static PdfPTable generarTablaRotacion(Connection conn, String sql, String tituloColumna3, Object... parametros) throws Exception {
+        PdfPTable tabla = new PdfPTable(3);
+        tabla.setWidthPercentage(100);
+        tabla.setWidths(new float[]{1.5f, 6f, 2.5f});
+
+        Font fontHeader = new Font(Font.FontFamily.HELVETICA, 12, Font.BOLD, BaseColor.WHITE);
+        String[] headers = {"ID / Código", "Nombre del Producto", tituloColumna3};
+
+        for (String header : headers) {
+            PdfPCell cell = new PdfPCell(new Phrase(header, fontHeader));
+            cell.setBackgroundColor(new BaseColor(41, 98, 255)); // Azul Lumtech
+            cell.setPadding(5);
+            cell.setHorizontalAlignment(Element.ALIGN_CENTER);
+            tabla.addCell(cell);
+        }
+
+        Font fontData = new Font(Font.FontFamily.HELVETICA, 11, Font.NORMAL);
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            // Inyectar los parámetros dinámicos (Mes y Año) si existen
+            for (int i = 0; i < parametros.length; i++) {
+                ps.setObject(i + 1, parametros[i]);
+            }
+
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    tabla.addCell(new PdfPCell(new Phrase(String.valueOf(rs.getInt(1)), fontData)));
+                    tabla.addCell(new PdfPCell(new Phrase(rs.getString(2), fontData)));
+
+                    PdfPCell celdaUnidades = new PdfPCell(new Phrase(String.valueOf(rs.getInt(3)), fontData));
+                    celdaUnidades.setHorizontalAlignment(Element.ALIGN_CENTER);
+                    tabla.addCell(celdaUnidades);
+                }
+            }
+        }
+        return tabla;
     }
 }

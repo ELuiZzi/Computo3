@@ -2,7 +2,6 @@ package config;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import ui.componentes.JOptionPanePro;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -37,11 +36,11 @@ public class ConexionBD {
                 user = props.getProperty("db.user", "root");
                 pass = props.getProperty("db.password", "");
             } catch (IOException e) {
-                JOptionPanePro.mostrarMensaje(null, "Error Config", "No se pudo leer config.properties", "ERROR");
+                System.err.println("Error Config: No se pudo leer config.properties - " + e.getMessage());
             }
         } else {
             crearArchivoPorDefecto(props, archivoConfig);
-            JOptionPanePro.mostrarMensaje(null, "Configuración", "Se creó 'config.properties'. Configura la IP si es necesario.", "INFO");
+            System.out.println("Configuración: Se creó 'config.properties'. Configura la IP si es necesario.");
         }
 
         // 2. CONFIGURAR HIKARICP
@@ -64,24 +63,25 @@ public class ConexionBD {
             config.setConnectionTimeout(10000); // 10 segundos máximo esperando conexión
 
             dataSource = new HikariDataSource(config);
+
+            // 3. REGISTRAR SHUTDOWN HOOK PARA CERRAR EL POOL
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                if (dataSource != null && !dataSource.isClosed()) {
+                    dataSource.close();
+                    System.out.println("Pool de conexiones de HikariCP cerrado correctamente.");
+                }
+            }));
         } catch (Exception e) {
             System.err.println("Error crítico al inicializar HikariCP: " + e.getMessage());
         }
     }
 
-    public static Connection conectar() {
-        try {
-            if (dataSource == null) {
-                JOptionPanePro.mostrarMensaje(null, "Error", "El Pool de BD no se inicializó.", "ERROR");
-                return null;
-            }
-            // Retorna una conexión del Pool en milisegundos
-            return dataSource.getConnection();
-        } catch (SQLException e) {
-            System.err.println("Error conexión: " + e.getMessage());
-            JOptionPanePro.mostrarMensaje(null, "Error de Conexión", "No se pudo conectar al servidor.\nVerifica IP y Credenciales.", "ERROR");
-            return null;
+    // 4. RETORNAR CONEXIÓN O LANZAR EXCEPCIÓN EN LUGAR DE NULL
+    public static Connection conectar() throws SQLException {
+        if (dataSource == null) {
+            throw new SQLException("El Pool de BD no se inicializó correctamente. Revisa los logs de arranque.");
         }
+        return dataSource.getConnection();
     }
 
     private static void crearArchivoPorDefecto(Properties props, File archivo) {
@@ -93,7 +93,7 @@ public class ConexionBD {
             props.setProperty("db.password", "");
             props.store(output, "Configuracion de Base de Datos - Sistema POS");
         } catch (IOException e) {
-            e.printStackTrace();
+            System.err.println("Error al crear archivo por defecto: " + e.getMessage());
         }
     }
 }

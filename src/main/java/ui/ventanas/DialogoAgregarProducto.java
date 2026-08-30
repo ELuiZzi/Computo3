@@ -86,17 +86,18 @@ public class DialogoAgregarProducto extends JDialog {
 
             ps.setString(1, "%" + busqueda + "%");
             ps.setString(2, "%" + busqueda + "%");
-            ResultSet rs = ps.executeQuery();
-
-            while (rs.next()) {
-                modeloTabla.addRow(new Object[]{
-                        rs.getInt("id"),
-                        rs.getString("nombre"),       // Antes era descripcion
-                        rs.getInt("stock"),
-                        rs.getDouble("precio")        // Antes era precio_venta
-                });
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    modeloTabla.addRow(new Object[]{
+                            rs.getInt("id"),
+                            rs.getString("nombre"),       // Antes era descripcion
+                            rs.getInt("stock"),
+                            rs.getDouble("precio")        // Antes era precio_venta
+                    });
+                }
             }
         } catch (Exception ex) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en DialogoAgregarProducto.buscarProductos: " + ex.getMessage());
             ex.printStackTrace();
         }
     }
@@ -145,8 +146,12 @@ public class DialogoAgregarProducto extends JDialog {
                 dispose();
             } catch (Exception ex) {
                 conn.rollback();
+                servicios.LoggerPro.registrar("ERROR_DB", "Transacción fallida en DialogoAgregarProducto: " + ex.getMessage());
                 ex.printStackTrace();
             }
-        } catch (Exception ex) { ex.printStackTrace(); }
+        } catch (Exception ex) { 
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo de conexión en DialogoAgregarProducto: " + ex.getMessage());
+            ex.printStackTrace(); 
+        }
     }
 }

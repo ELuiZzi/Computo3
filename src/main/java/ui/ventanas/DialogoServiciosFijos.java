@@ -18,6 +18,9 @@ public class DialogoServiciosFijos extends JDialog {
     // Campos Dinámicos
     private JPanel panelOffice;
     private JTextField txtClaveOffice, txtIdInstalacion, txtIdConfirmacion;
+    
+    private JPanel panelOffice365;
+    private JTextField txtCorreo365, txtPassword365;
 
     private JComboBox<String> cbAntivirus;
     private JLabel lblAntivirus;
@@ -44,6 +47,7 @@ public class DialogoServiciosFijos extends JDialog {
                 "Instalación de Windows",
                 "Respaldo de Información", // Sugerencia: mantenerlo por el tiempo que exige
                 "Instalación de Office",
+                "Suscripción Office 365 (1 Año)",
                 "Antivirus",
                 "Mantenimiento Preventivo",
                 "Otro..."
@@ -90,10 +94,23 @@ public class DialogoServiciosFijos extends JDialog {
         gbc.gridx = 0; gbc.gridy = fila; gbc.gridwidth = 2;
         panelCentral.add(panelOffice, gbc);
 
+        // --- PANEL DINÁMICO DE OFFICE 365 ---
+        panelOffice365 = new JPanel(new GridLayout(2, 2, 5, 5));
+        panelOffice365.setBorder(BorderFactory.createTitledBorder("Datos de Suscripción"));
+        txtCorreo365 = new JTextField();
+        txtPassword365 = new JTextField();
+        
+        panelOffice365.add(new JLabel("Correo Electrónico:")); panelOffice365.add(txtCorreo365);
+        panelOffice365.add(new JLabel("Contraseña (Opcional):")); panelOffice365.add(txtPassword365);
+        
+        gbc.gridy = ++fila;
+        panelCentral.add(panelOffice365, gbc);
+
         // --- ESTADO INICIAL (Ocultar dinámicos) ---
         lblAntivirus.setVisible(false); cbAntivirus.setVisible(false);
         lblOtro.setVisible(false);      txtConceptoOtro.setVisible(false);
         panelOffice.setVisible(false);
+        panelOffice365.setVisible(false);
 
         // --- LISTENERS DE DINAMISMO ---
 
@@ -114,6 +131,7 @@ public class DialogoServiciosFijos extends JDialog {
                 lblAntivirus.setVisible(false); cbAntivirus.setVisible(false);
                 lblOtro.setVisible(false);      txtConceptoOtro.setVisible(false);
                 panelOffice.setVisible(false);
+                panelOffice365.setVisible(false);
 
                 // 2. Configurar vista y precios
                 switch(seleccionado) {
@@ -124,6 +142,11 @@ public class DialogoServiciosFijos extends JDialog {
                     case "Instalación de Office":
                         txtPrecio.setText("600.00");
                         panelOffice.setVisible(true);
+                        break;
+                        
+                    case "Suscripción Office 365 (1 Año)":
+                        txtPrecio.setText("550.00");
+                        panelOffice365.setVisible(true);
                         break;
 
                     case "Antivirus":
@@ -190,9 +213,8 @@ public class DialogoServiciosFijos extends JDialog {
         }
 
         boolean exitoCargo = false;
-        try (Connection conn = ConexionBD.conectar()) { // Verifica tu clase de conexión
-            String sqlCargo = "INSERT INTO cargos_orden (id_orden, concepto, monto) VALUES (?, ?, ?)";
-            PreparedStatement psCargo = conn.prepareStatement(sqlCargo);
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement psCargo = conn.prepareStatement("INSERT INTO cargos_orden (id_orden, concepto, monto) VALUES (?, ?, ?)")) {
             psCargo.setInt(1, this.idOrden);
             psCargo.setString(2, servicio.toUpperCase());
             psCargo.setDouble(3, precio);
@@ -201,6 +223,7 @@ public class DialogoServiciosFijos extends JDialog {
                 exitoCargo = true;
             }
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en DialogoServiciosFijos.procesarGuardado: " + e.getMessage());
             e.printStackTrace();
             JOptionPane.showMessageDialog(this, "Error al guardar el cobro.");
         }
@@ -220,8 +243,46 @@ public class DialogoServiciosFijos extends JDialog {
 
                     psLic.executeUpdate();
                 } catch (Exception ex) {
+                    servicios.LoggerPro.registrar("ERROR_DB", "Fallo en DialogoServiciosFijos.procesarGuardado Office: " + ex.getMessage());
                     ex.printStackTrace();
                     JOptionPane.showMessageDialog(this, "Se cobró el servicio, pero hubo un error al guardar claves de Office.");
+                }
+            } else if ("Suscripción Office 365 (1 Año)".equals((String) cbServicios.getSelectedItem())) {
+                String sqlSuscripcion = "INSERT INTO suscripciones_office (id_orden, correo, password, fecha_compra, fecha_vencimiento) VALUES (?, ?, ?, CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR))";
+                try (Connection con = ConexionBD.conectar();
+                     PreparedStatement psSub = con.prepareStatement(sqlSuscripcion)) {
+                    psSub.setInt(1, this.idOrden);
+                    psSub.setString(2, txtCorreo365.getText().trim());
+                    psSub.setString(3, txtPassword365.getText().trim());
+                    psSub.executeUpdate();
+                    
+                    // Obtener nombre del cliente para la tarjeta
+                    String clienteNombre = "Cliente";
+                    try (PreparedStatement psCli = con.prepareStatement("SELECT c.nombre FROM ordenes_servicio o JOIN clientes c ON o.id_cliente = c.id WHERE o.id = ?")) {
+                        psCli.setInt(1, this.idOrden);
+                        try (java.sql.ResultSet rsCli = psCli.executeQuery()) {
+                            if (rsCli.next()) clienteNombre = rsCli.getString("nombre");
+                        }
+                    }
+                    
+                    // Generar y abrir tarjeta
+                    java.time.LocalDate hoy = java.time.LocalDate.now();
+                    String rutaTarjeta = servicios.GeneradorTarjetaOffice.generarTarjeta(
+                            clienteNombre, txtCorreo365.getText().trim(), txtPassword365.getText().trim(), hoy, hoy.plusYears(1)
+                    );
+                    
+                    if (rutaTarjeta != null) {
+                        try {
+                            java.awt.Desktop.getDesktop().open(new java.io.File(rutaTarjeta));
+                        } catch (Exception ex) {
+                            ex.printStackTrace();
+                        }
+                    }
+                    
+                } catch (Exception ex) {
+                    servicios.LoggerPro.registrar("ERROR_DB", "Fallo al guardar suscripcion O365: " + ex.getMessage());
+                    ex.printStackTrace();
+                    JOptionPane.showMessageDialog(this, "Se cobró el servicio, pero hubo un error al guardar O365.");
                 }
             }
 

@@ -111,9 +111,9 @@ public class PanelFaltantes extends JPanel {
         panelSur.setBackground(Estilos.COLOR_FONDO);
         panelSur.setBorder(new EmptyBorder(10,0,10,20));
 
-        BotonPro btnEliminar = new BotonPro("❌ Quitar", new Color(200, 50, 50), this::eliminarDeFaltantes);
-        BotonPro btnEditar = new BotonPro("✏ Editar Cant.", Color.ORANGE, this::modificarCantidad);
-        BotonPro btnSurtir = new BotonPro("📦 SURTIR", new Color(46, 204, 113), this::surtirProducto);
+        BotonPro btnEliminar = new BotonPro("Quitar", "eliminar.png", new Color(200, 50, 50), this::eliminarDeFaltantes);
+        BotonPro btnEditar = new BotonPro("Editar Cant.", "lapiz.png", Color.ORANGE, this::modificarCantidad);
+        BotonPro btnSurtir = new BotonPro("SURTIR","caja.png", new Color(46, 204, 113), this::surtirProducto);
 
         panelSur.add(btnEliminar);
         panelSur.add(Box.createHorizontalStrut(10));
@@ -159,15 +159,18 @@ public class PanelFaltantes extends JPanel {
     // ==========================================================
 
     private void modificarCantidad() {
-        int row = tabla.getSelectedRow();
-        if (row == -1) {
+        int rowView = tabla.getSelectedRow();
+        if (rowView == -1) {
             JOptionPanePro.mostrarMensaje(this, "Aviso", "Selecciona un producto para editar.", "ADVERTENCIA");
             return;
         }
 
-        int id = Integer.parseInt(modelo.getValueAt(row, 0).toString());
-        String nombre = modelo.getValueAt(row, 1).toString();
-        String cantActualStr = modelo.getValueAt(row, 6).toString().replace(" Pzas", "").trim();
+        // EL FIX MÁGICO
+        int rowModelo = tabla.convertRowIndexToModel(rowView);
+
+        int id = Integer.parseInt(modelo.getValueAt(rowModelo, 0).toString());
+        String nombre = modelo.getValueAt(rowModelo, 1).toString();
+        String cantActualStr = modelo.getValueAt(rowModelo, 6).toString().replace(" Pzas", "").trim();
 
         String input = JOptionPanePro.solicitarEntrada(this, "Editar Pedido",
                 "Producto: " + nombre + "\nCantidad actual a pedir: " + cantActualStr + "\n\nNueva cantidad:");
@@ -177,8 +180,8 @@ public class PanelFaltantes extends JPanel {
                 int nuevaCant = Integer.parseInt(input);
                 if (nuevaCant < 0) throw new NumberFormatException();
 
-                try (Connection conn = ConexionBD.conectar()) {
-                    PreparedStatement ps = conn.prepareStatement("UPDATE productos SET cantidad_faltante = ? WHERE id = ?");
+                try (Connection conn = ConexionBD.conectar();
+                     PreparedStatement ps = conn.prepareStatement("UPDATE productos SET cantidad_faltante = ? WHERE id = ?")) {
                     ps.setInt(1, nuevaCant);
                     ps.setInt(2, id);
                     ps.executeUpdate();
@@ -187,21 +190,25 @@ public class PanelFaltantes extends JPanel {
                     cargarFaltantes();
                 }
             } catch (Exception e) {
+                servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelFaltantes.modificarCantidad: " + e.getMessage());
                 JOptionPanePro.mostrarMensaje(this, "Error", "Ingresa un número válido (0 o mayor).", "ERROR");
             }
         }
     }
 
     private void eliminarDeFaltantes() {
-        int row = tabla.getSelectedRow();
-        if (row == -1) {
+        int rowView = tabla.getSelectedRow();
+        if (rowView == -1) {
             JOptionPanePro.mostrarMensaje(this, "Aviso", "Selecciona un producto para quitar.", "ADVERTENCIA");
             return;
         }
 
-        int id = Integer.parseInt(modelo.getValueAt(row, 0).toString());
-        String nombre = modelo.getValueAt(row, 1).toString();
-        int stockActual = Integer.parseInt(modelo.getValueAt(row, 5).toString());
+        // EL FIX MÁGICO
+        int rowModelo = tabla.convertRowIndexToModel(rowView);
+
+        int id = Integer.parseInt(modelo.getValueAt(rowModelo, 0).toString());
+        String nombre = modelo.getValueAt(rowModelo, 1).toString();
+        int stockActual = Integer.parseInt(modelo.getValueAt(rowModelo, 5).toString());
 
         // Opciones personalizadas para el usuario
         Object[] opciones = {"Solo Borrar Pedido (0)", "Descontinuar Producto", "Cancelar"};
@@ -221,9 +228,10 @@ public class PanelFaltantes extends JPanel {
         try (Connection conn = ConexionBD.conectar()) {
             if (seleccion == 0) {
                 // OPCIÓN A: SOLO RESETEAR CONTADOR
-                PreparedStatement ps = conn.prepareStatement("UPDATE productos SET cantidad_faltante = 0 WHERE id = ?");
-                ps.setInt(1, id);
-                ps.executeUpdate();
+                try (PreparedStatement ps = conn.prepareStatement("UPDATE productos SET cantidad_faltante = 0 WHERE id = ?")) {
+                    ps.setInt(1, id);
+                    ps.executeUpdate();
+                }
 
                 // Advertencia si el stock es 0, porque seguirá apareciendo
                 if (stockActual == 0) {
@@ -236,9 +244,10 @@ public class PanelFaltantes extends JPanel {
             } else if (seleccion == 1) {
                 // OPCIÓN B: DESCONTINUAR (SOFT DELETE)
                 if (JOptionPanePro.mostrarConfirmacion(this, "Confirmar Baja", "¿Seguro que DESCONTINUAS este producto?\nYa no aparecerá en Inventario ni Faltantes.")) {
-                    PreparedStatement ps = conn.prepareStatement("UPDATE productos SET activo = 0 WHERE id = ?");
-                    ps.setInt(1, id);
-                    ps.executeUpdate();
+                    try (PreparedStatement ps = conn.prepareStatement("UPDATE productos SET activo = 0 WHERE id = ?")) {
+                        ps.setInt(1, id);
+                        ps.executeUpdate();
+                    }
                     JOptionPanePro.mostrarMensaje(this, "Baja", "Producto descontinuado.", "INFO");
                 }
             }
@@ -247,6 +256,7 @@ public class PanelFaltantes extends JPanel {
             cargarFaltantes();
 
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelFaltantes.eliminarDeFaltantes: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -258,10 +268,13 @@ public class PanelFaltantes extends JPanel {
 
 
     private void surtirProducto() {
-        int row = tabla.getSelectedRow();
-        if (row != -1) {
-            int id = Integer.parseInt(modelo.getValueAt(row, 0).toString());
-            String nombre = modelo.getValueAt(row, 1).toString();
+        int rowView = tabla.getSelectedRow();
+        if (rowView != -1) {
+            // EL FIX MÁGICO
+            int rowModelo = tabla.convertRowIndexToModel(rowView);
+
+            int id = Integer.parseInt(modelo.getValueAt(rowModelo, 0).toString());
+            String nombre = modelo.getValueAt(rowModelo, 1).toString();
             procesarEntradaStock(id, nombre);
         } else {
             // En lugar del JOptionPanePro, lanzamos el escáner continuo
@@ -326,24 +339,24 @@ public class PanelFaltantes extends JPanel {
     // Copiar de la versión anterior...
 
     private boolean buscarYProcesarCodigo(String codigo) {
-        try (Connection conn = ConexionBD.conectar()) {
-            String sql = "SELECT id, nombre FROM productos WHERE codigo_barras = ? AND activo = 1";
-            PreparedStatement ps = conn.prepareStatement(sql);
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement("SELECT id, nombre FROM productos WHERE codigo_barras = ? AND activo = 1")) {
             ps.setString(1, codigo);
-            ResultSet rs = ps.executeQuery();
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    int id = rs.getInt("id");
+                    String nombre = rs.getString("nombre");
 
-            if (rs.next()) {
-                int id = rs.getInt("id");
-                String nombre = rs.getString("nombre");
-
-                // ¡Encontrado! Pasamos a pedir la cantidad
-                procesarEntradaStock(id, nombre);
-return true;
-            } else {
-                JOptionPanePro.mostrarMensaje(this, "Error", "Producto no encontrado o inactivo: " + codigo, "ERROR");
-                return false;
+                    // ¡Encontrado! Pasamos a pedir la cantidad
+                    procesarEntradaStock(id, nombre);
+                    return true;
+                } else {
+                    JOptionPanePro.mostrarMensaje(this, "Error", "Producto no encontrado o inactivo: " + codigo, "ERROR");
+                    return false;
+                }
             }
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelFaltantes.buscarYProcesarCodigo: " + e.getMessage());
             e.printStackTrace();
             JOptionPanePro.mostrarMensaje(this, "Error BD", e.getMessage(), "ERROR");
         }
@@ -362,11 +375,9 @@ return true;
                     return;
                 }
 
-                try (Connection conn = ConexionBD.conectar()) {
-                    // Lógica: Sumar Stock y Restar Faltante (sin bajar de 0)
-                    String sql = "UPDATE productos SET stock = stock + ?, cantidad_faltante = GREATEST(0, cantidad_faltante - ?) WHERE id = ?";
-
-                    PreparedStatement ps = conn.prepareStatement(sql);
+                try (Connection conn = ConexionBD.conectar();
+                     PreparedStatement ps = conn.prepareStatement("UPDATE productos SET stock = stock + ?, cantidad_faltante = GREATEST(0, cantidad_faltante - ?) WHERE id = ?")) {
+                    
                     ps.setInt(1, cantidadLlegada);
                     ps.setInt(2, cantidadLlegada);
                     ps.setInt(3, idProducto);
@@ -383,6 +394,7 @@ return true;
             } catch (NumberFormatException e) {
                 JOptionPanePro.mostrarMensaje(this, "Error", "Ingresa un número válido.", "ERROR");
             } catch (SQLException e) {
+                servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelFaltantes.procesarEntradaStock: " + e.getMessage());
                 e.printStackTrace();
                 JOptionPanePro.mostrarMensaje(this, "Error SQL", e.getMessage(), "ERROR");
             }
@@ -417,26 +429,27 @@ return true;
             // Ordenar: Los más recientes y críticos primero
             sql += "ORDER BY fecha_faltante DESC, stock ASC";
 
-            ResultSet rs = stmt.executeQuery(sql);
+            try (ResultSet rs = stmt.executeQuery(sql)) {
+                while (rs.next()) {
+                    int id = rs.getInt("id");
+                    String nom = rs.getString("nombre");
+                    String mod = rs.getString("modelo");
+                    String mar = rs.getString("marca");
+                    String pro = rs.getString("proveedor");
+                    int stock = rs.getInt("stock");
+                    int faltante = rs.getInt("cantidad_faltante");
+                    double costo = rs.getDouble("costo");
+                    Timestamp fecha = rs.getTimestamp("fecha_faltante");
 
-            while (rs.next()) {
-                int id = rs.getInt("id");
-                String nom = rs.getString("nombre");
-                String mod = rs.getString("modelo");
-                String mar = rs.getString("marca");
-                String pro = rs.getString("proveedor");
-                int stock = rs.getInt("stock");
-                int faltante = rs.getInt("cantidad_faltante");
-                double costo = rs.getDouble("costo");
-                Timestamp fecha = rs.getTimestamp("fecha_faltante");
+                    int sugerencia = (stock <= 2 && faltante == 0) ? 1 : faltante;
 
-                int sugerencia = (stock <= 2 && faltante == 0) ? 1 : faltante;
-
-                modelo.addRow(new Object[]{
-                        id, nom, mod, mar, pro, stock, sugerencia + " Pzas", costo, fecha
-                });
+                    modelo.addRow(new Object[]{
+                            id, nom, mod, mar, pro, stock, sugerencia + " Pzas", costo, fecha
+                    });
+                }
             }
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelFaltantes.cargarFaltantes: " + e.getMessage());
             e.printStackTrace();
             JOptionPanePro.mostrarMensaje(this, "Error BD", e.getMessage(), "ERROR");
         }
@@ -457,17 +470,20 @@ return true;
 
         double granTotal = 0;
 
-        for (int row : filasSeleccionadas) {
-            String nombre = modelo.getValueAt(row, 1).toString();
-            String modeloProd = modelo.getValueAt(row, 2).toString();
-            String proveedor = modelo.getValueAt(row, 4).toString();
+        for (int rowView : filasSeleccionadas) {
+            // EL FIX MÁGICO (Aplica para cada fila en el ciclo)
+            int rowModelo = tabla.convertRowIndexToModel(rowView);
+
+            String nombre = modelo.getValueAt(rowModelo, 1).toString();
+            String modeloProd = modelo.getValueAt(rowModelo, 2).toString();
+            String proveedor = modelo.getValueAt(rowModelo, 4).toString();
 
             // Limpiar " Pzas" del string para obtener número
-            String cantStr = modelo.getValueAt(row, 6).toString().replace(" Pzas", "").trim();
+            String cantStr = modelo.getValueAt(rowModelo, 6).toString().replace(" Pzas", "").trim();
             int cantidad = Integer.parseInt(cantStr);
 
             // Obtener costo de columna oculta
-            double costoUnitario = Double.parseDouble(modelo.getValueAt(row, 7).toString());
+            double costoUnitario = Double.parseDouble(modelo.getValueAt(rowModelo, 7).toString());
             double totalLinea = cantidad * costoUnitario;
 
             granTotal += totalLinea;
@@ -489,8 +505,6 @@ return true;
         try {
             // Codificar el mensaje para URL (espacios a %20, saltos a %0A, etc.)
             String mensajeCodificado = URLEncoder.encode(mensaje.toString(), StandardCharsets.UTF_8.toString());
-            // Número formato internacional México: 52 + 1 + 777... (A veces el 1 es opcional en API, pero 52 es forzoso)
-            // Se usa el número que proporcionaste: 7771908024
             String url = "https://wa.me/527771908024?text=" + mensajeCodificado;
 
             Desktop.getDesktop().browse(new URI(url));

@@ -68,11 +68,15 @@ public class DialogoCodigos extends JDialog {
             String sql = "SELECT id, codigo FROM codigos_adicionales WHERE id_producto = ?";
             PreparedStatement ps = conn.prepareStatement(sql);
             ps.setInt(1, idProducto);
-            ResultSet rs = ps.executeQuery();
-            while(rs.next()) {
-                modelo.addRow(new Object[]{rs.getInt("id"), rs.getString("codigo")});
+            try (ResultSet rs = ps.executeQuery()) {
+                while(rs.next()) {
+                    modelo.addRow(new Object[]{rs.getInt("id"), rs.getString("codigo")});
+                }
             }
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { 
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en DialogoCodigos.cargarCodigos: " + e.getMessage());
+            e.printStackTrace(); 
+        }
     }
 
     private void agregarCodigo() {
@@ -85,25 +89,30 @@ public class DialogoCodigos extends JDialog {
             PreparedStatement psCheck = conn.prepareStatement("SELECT (SELECT count(*) FROM productos WHERE codigo_barras = ?) + (SELECT count(*) FROM codigos_adicionales WHERE codigo = ?) as total");
             psCheck.setString(1, codigo);
             psCheck.setString(2, codigo);
-            ResultSet rs = psCheck.executeQuery();
-            rs.next();
-            if(rs.getInt(1) > 0) {
-                JOptionPanePro.mostrarMensaje(this, "Error", "Ese código ya está en uso.", "ERROR");
-                return;
+            try (ResultSet rs = psCheck.executeQuery()) {
+                rs.next();
+                if(rs.getInt(1) > 0) {
+                    JOptionPanePro.mostrarMensaje(this, "Error", "Ese código ya está en uso.", "ERROR");
+                    return;
+                }
             }
 
             // Insertar
             String sql = "INSERT INTO codigos_adicionales (id_producto, codigo) VALUES (?, ?)";
-            PreparedStatement ps = conn.prepareStatement(sql);
-            ps.setInt(1, idProducto);
-            ps.setString(2, codigo);
-            ps.executeUpdate();
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setInt(1, idProducto);
+                ps.setString(2, codigo);
+                ps.executeUpdate();
+            }
 
             txtNuevoCodigo.setText("");
             cargarCodigos();
             ToastPro.show("Código Agregado", "EXITO");
 
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { 
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en DialogoCodigos.agregarCodigo: " + e.getMessage());
+            e.printStackTrace(); 
+        }
     }
 
     private void eliminarCodigo() {
@@ -111,9 +120,13 @@ public class DialogoCodigos extends JDialog {
         if(row == -1) return;
         int id = Integer.parseInt(modelo.getValueAt(row, 0).toString());
 
-        try (Connection conn = config.ConexionBD.conectar()) {
-            conn.createStatement().executeUpdate("DELETE FROM codigos_adicionales WHERE id = " + id);
+        try (Connection conn = config.ConexionBD.conectar();
+             java.sql.Statement st = conn.createStatement()) {
+            st.executeUpdate("DELETE FROM codigos_adicionales WHERE id = " + id);
             cargarCodigos();
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { 
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en DialogoCodigos.eliminarCodigo: " + e.getMessage());
+            e.printStackTrace(); 
+        }
     }
 }

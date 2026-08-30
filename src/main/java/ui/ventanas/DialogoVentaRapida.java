@@ -80,15 +80,12 @@ public class DialogoVentaRapida extends JDialog {
         lblEstado.setText("Procesando...");
         lblEstado.setForeground(Color.WHITE);
 
-        try (Connection conn = ConexionBD.conectar()) {
-            // 1. Buscar Producto (Compatible con Multi-Códigos)
-            String sqlBuscar = "SELECT * FROM productos WHERE (codigo_barras = ? OR id IN (SELECT id_producto FROM codigos_adicionales WHERE codigo = ?)) AND activo = 1";
-            PreparedStatement ps = conn.prepareStatement(sqlBuscar);
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement("SELECT * FROM productos WHERE (codigo_barras = ? OR id IN (SELECT id_producto FROM codigos_adicionales WHERE codigo = ?)) AND activo = 1")) {
             ps.setString(1, codigo);
             ps.setString(2, codigo);
-            ResultSet rs = ps.executeQuery();
-
-            if (rs.next()) {
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
                 int idProd = rs.getInt("id");
                 String nombre = rs.getString("nombre");
                 double precio = rs.getDouble("precio");
@@ -107,26 +104,29 @@ public class DialogoVentaRapida extends JDialog {
                 conn.setAutoCommit(false);
 
                 // Insertar Venta
-                PreparedStatement psV = conn.prepareStatement("INSERT INTO ventas (total_venta, ganancia_total, tipo_venta) VALUES (?, ?, 'PRODUCTO')", Statement.RETURN_GENERATED_KEYS);
-                psV.setDouble(1, precio);
-                psV.setDouble(2, precio - costo);
-                psV.executeUpdate();
+                int idVenta = -1;
+                try (PreparedStatement psV = conn.prepareStatement("INSERT INTO ventas (total_venta, ganancia_total, tipo_venta) VALUES (?, ?, 'PRODUCTO')", Statement.RETURN_GENERATED_KEYS)) {
+                    psV.setDouble(1, precio);
+                    psV.setDouble(2, precio - costo);
+                    psV.executeUpdate();
 
-                ResultSet rsKey = psV.getGeneratedKeys();
-                rsKey.next();
-                int idVenta = rsKey.getInt(1);
+                    try (ResultSet rsKey = psV.getGeneratedKeys()) {
+                        if (rsKey.next()) {
+                            idVenta = rsKey.getInt(1);
+                        }
+                    }
+                }
 
-                // Insertar Detalle
-                PreparedStatement psD = conn.prepareStatement("INSERT INTO detalle_venta (id_venta, id_producto, cantidad, subtotal) VALUES (?, ?, 1, ?)");
-                psD.setInt(1, idVenta);
-                psD.setInt(2, idProd);
-                psD.setDouble(3, precio);
-                psD.executeUpdate();
+                try (PreparedStatement psD = conn.prepareStatement("INSERT INTO detalle_venta (id_venta, id_producto, cantidad, subtotal) VALUES (?, ?, 1, ?)");
+                     PreparedStatement psS = conn.prepareStatement("UPDATE productos SET stock = stock - 1 WHERE id = ?")) {
+                    psD.setInt(1, idVenta);
+                    psD.setInt(2, idProd);
+                    psD.setDouble(3, precio);
+                    psD.executeUpdate();
 
-                // Restar Stock
-                PreparedStatement psS = conn.prepareStatement("UPDATE productos SET stock = stock - 1 WHERE id = ?");
-                psS.setInt(1, idProd);
-                psS.executeUpdate();
+                    psS.setInt(1, idProd);
+                    psS.executeUpdate();
+                }
 
                 conn.commit();
 
@@ -151,8 +151,9 @@ public class DialogoVentaRapida extends JDialog {
                 lblEstado.setForeground(Color.RED);
                 txtScanner.selectAll();
             }
-
+            }
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en DialogoVentaRapida: " + e.getMessage());
             e.printStackTrace();
             lblEstado.setText("Error en Base de Datos");
             lblEstado.setForeground(Color.RED);

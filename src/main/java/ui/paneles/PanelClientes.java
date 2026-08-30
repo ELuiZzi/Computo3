@@ -169,16 +169,19 @@ public class PanelClientes extends JPanel {
     private void cargarClientes() {
         modeloClientes.setRowCount(0);
         String filtro = txtBuscar.getText().trim();
-        try (Connection conn = ConexionBD.conectar()) {
-            String sql = "SELECT * FROM clientes WHERE nombre LIKE ? OR telefono LIKE ? ORDER BY nombre";
-            PreparedStatement ps = conn.prepareStatement(sql);
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement("SELECT * FROM clientes WHERE nombre LIKE ? OR telefono LIKE ? ORDER BY nombre")) {
             ps.setString(1, "%" + filtro + "%");
             ps.setString(2, "%" + filtro + "%");
-            ResultSet rs = ps.executeQuery();
-            while(rs.next()) {
-                modeloClientes.addRow(new Object[]{rs.getInt("id"), rs.getString("nombre"), rs.getString("telefono")});
+            try (ResultSet rs = ps.executeQuery()) {
+                while(rs.next()) {
+                    modeloClientes.addRow(new Object[]{rs.getInt("id"), rs.getString("nombre"), rs.getString("telefono")});
+                }
             }
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelClientes.cargarClientes: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     private void cargarDetalleCliente() {
@@ -198,40 +201,37 @@ public class PanelClientes extends JPanel {
         double totalGasto = 0;
         int conteo = 0;
 
-        try (Connection conn = ConexionBD.conectar()) {
-            // Buscamos órdenes y sumamos lo cobrado en ventas relacionado a esas órdenes
-            // Ojo: Para el historial simple, usamos el costo estimado de la orden.
-            // Para el "Gasto Real", lo ideal sería sumar la tabla ventas, pero para simplificar visualmente
-            // usaremos el costo_estimado de la orden si está entregada.
-
-            String sql = "SELECT id, fecha_recepcion, dispositivo, estado, costo_estimado FROM ordenes_servicio WHERE id_cliente = ? ORDER BY id DESC";
-            PreparedStatement ps = conn.prepareStatement(sql);
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement("SELECT id, fecha_recepcion, dispositivo, estado, costo_estimado FROM ordenes_servicio WHERE id_cliente = ? ORDER BY id DESC")) {
             ps.setInt(1, idCliente);
-            ResultSet rs = ps.executeQuery();
+            try (ResultSet rs = ps.executeQuery()) {
+                while(rs.next()) {
+                    conteo++;
+                    double costo = rs.getDouble("costo_estimado");
+                    String estado = rs.getString("estado");
 
-            while(rs.next()) {
-                conteo++;
-                double costo = rs.getDouble("costo_estimado");
-                String estado = rs.getString("estado");
+                    // Sumar al total histórico si ya fue entregado/pagado
+                    if("ENTREGADO".equals(estado) || "LISTO".equals(estado)) {
+                        totalGasto += costo;
+                    }
 
-                // Sumar al total histórico si ya fue entregado/pagado
-                if("ENTREGADO".equals(estado) || "LISTO".equals(estado)) {
-                    totalGasto += costo;
+                    modeloHistorial.addRow(new Object[]{
+                            rs.getInt("id"),
+                            rs.getTimestamp("fecha_recepcion"),
+                            rs.getString("dispositivo"),
+                            estado,
+                            "$" + costo
+                    });
                 }
-
-                modeloHistorial.addRow(new Object[]{
-                        rs.getInt("id"),
-                        rs.getTimestamp("fecha_recepcion"),
-                        rs.getString("dispositivo"),
-                        estado,
-                        "$" + costo
-                });
             }
 
             lblTotalOrdenes.setText(conteo + " Órdenes");
             lblTotalGastado.setText("$" + String.format("%.2f", totalGasto) + " Invertidos");
 
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelClientes.cargarHistorial: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     private void guardarCambios() {
@@ -240,9 +240,8 @@ public class PanelClientes extends JPanel {
         String nuevoNombre = Recursos.capitalizarTexto(txtNombre.getText());
         String nuevoTel = txtTelefono.getText().trim();
 
-        try (Connection conn = ConexionBD.conectar()) {
-            String sql = "UPDATE clientes SET nombre = ?, telefono = ? WHERE id = ?";
-            PreparedStatement ps = conn.prepareStatement(sql);
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement("UPDATE clientes SET nombre = ?, telefono = ? WHERE id = ?")) {
             ps.setString(1, nuevoNombre);
             ps.setString(2, nuevoTel);
             ps.setInt(3, idClienteSeleccionado);
@@ -253,6 +252,7 @@ public class PanelClientes extends JPanel {
                 cargarClientes(); // Refrescar lista
             }
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelClientes.guardarCambios: " + e.getMessage());
             JOptionPanePro.mostrarMensaje(this, "Error", "Error al actualizar (¿Teléfono duplicado?)", "ERROR");
         }
     }

@@ -75,7 +75,7 @@ public class PanelDashboard extends JPanel {
 
         JLabel lblLogoFondo = new JLabel("", SwingConstants.CENTER);
         try {
-            ImageIcon icon = new ImageIcon("recursos/logo.png");
+            ImageIcon icon = new ImageIcon("recursos/logo2.png");
             Image img = icon.getImage().getScaledInstance(200, 200, Image.SCALE_SMOOTH);
             lblLogoFondo.setIcon(new ImageIcon(img));
         } catch(Exception e){}
@@ -108,101 +108,154 @@ public class PanelDashboard extends JPanel {
     }
 
     private String obtenerVentasHoy() {
-        try (Connection c = ConexionBD.conectar()) {
-            ResultSet rs = c.createStatement().executeQuery("SELECT SUM(total_venta) FROM ventas WHERE DATE(fecha) = CURDATE()");
+        try (Connection c = ConexionBD.conectar();
+             java.sql.Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT SUM(total_venta) FROM ventas WHERE DATE(fecha) = CURDATE()")) {
             if(rs.next()) return "$" + (rs.getString(1) == null ? "0.00" : rs.getString(1));
-        } catch(Exception e){} return "$0.00";
+        } catch(Exception e) { servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelDashboard.obtenerVentasHoy: " + e.getMessage()); e.printStackTrace(); } return "$0.00";
     }
 
     private String obtenerServiciosPendientes() {
-        try (Connection c = ConexionBD.conectar()) {
-            ResultSet rs = c.createStatement().executeQuery("SELECT COUNT(*) FROM ordenes_servicio WHERE estado != 'ENTREGADO'");
+        try (Connection c = ConexionBD.conectar();
+             java.sql.Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM ordenes_servicio WHERE estado != 'ENTREGADO'")) {
             if(rs.next()) return rs.getString(1) + " Equipos";
-        } catch(Exception e){} return "0";
+        } catch(Exception e) { servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelDashboard.obtenerServiciosPendientes: " + e.getMessage()); e.printStackTrace(); } return "0";
     }
 
     private String obtenerAgotados() {
-        try (Connection c = ConexionBD.conectar()) {
-            ResultSet rs = c.createStatement().executeQuery("SELECT COUNT(*) FROM productos WHERE stock = 0 AND activo = 1");
+        try (Connection c = ConexionBD.conectar();
+             java.sql.Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM productos WHERE stock = 0 AND activo = 1")) {
             if(rs.next()) return rs.getString(1) + " Prods.";
-        } catch(Exception e){} return "0";
+        } catch(Exception e) { servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelDashboard.obtenerAgotados: " + e.getMessage()); e.printStackTrace(); } return "0";
     }
 
     private void verificarNotificacionesCRM() {
-        String sql = "SELECT COUNT(*) FROM ordenes_servicio " +
-                "WHERE DATE(fecha_entrega) = DATE_SUB(CURDATE(), INTERVAL 1 YEAR) " +
-                "AND apto_mantenimiento = 1";
-
-        try (Connection conn = ConexionBD.conectar();
-             PreparedStatement ps = conn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-
-            if (rs.next()) {
-                int pendientes = rs.getInt(1);
-
-                if (pendientes > 0) {
-                    // Hay mensajes por enviar: Ponemos la campana con bolita roja
-                    btnNotificaciones.setIcon(new javax.swing.ImageIcon("recursos/campana_alerta.png"));
-                    btnNotificaciones.setToolTipText("Tienes " + pendientes + " recordatorios de mantenimiento hoy.");
-                } else {
-                    // Todo limpio: Campana normal
-                    btnNotificaciones.setIcon(new javax.swing.ImageIcon("recursos/campana.png"));
-                    btnNotificaciones.setToolTipText("Sin notificaciones pendientes.");
-                }
+        String sqlMantenimiento = "SELECT COUNT(*) FROM ordenes_servicio WHERE DATE(fecha_entrega) = DATE_SUB(CURDATE(), INTERVAL 1 YEAR) AND apto_mantenimiento = 1";
+        String sqlOffice = "SELECT COUNT(*) FROM suscripciones_office WHERE fecha_vencimiento BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 1 MONTH) AND notificado = 0";
+        
+        try (Connection conn = ConexionBD.conectar()) {
+            int pendientes = 0;
+            
+            try (PreparedStatement psM = conn.prepareStatement(sqlMantenimiento); ResultSet rsM = psM.executeQuery()) {
+                if (rsM.next()) pendientes += rsM.getInt(1);
+            }
+            
+            try (PreparedStatement psO = conn.prepareStatement(sqlOffice); ResultSet rsO = psO.executeQuery()) {
+                if (rsO.next()) pendientes += rsO.getInt(1);
+            }
+            
+            if (pendientes > 0) {
+                btnNotificaciones.setIcon(new javax.swing.ImageIcon("recursos/campana_alerta.png"));
+                btnNotificaciones.setToolTipText("Tienes " + pendientes + " notificaciones pendientes.");
+            } else {
+                btnNotificaciones.setIcon(new javax.swing.ImageIcon("recursos/campana.png"));
+                btnNotificaciones.setToolTipText("Sin notificaciones pendientes.");
             }
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelDashboard.verificarNotificacionesCRM: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
     private void procesarNotificacionesCRM() {
-        String sqlSelect = "SELECT o.id, c.telefono, o.dispositivo, o.marca_modelo " +
+        String sqlMantenimiento = "SELECT o.id, c.nombre, c.telefono, o.dispositivo, o.marca_modelo " +
                 "FROM ordenes_servicio o " +
                 "INNER JOIN clientes c ON o.id_cliente = c.id " +
                 "WHERE DATE(o.fecha_entrega) = DATE_SUB(CURDATE(), INTERVAL 1 YEAR) " +
                 "AND o.apto_mantenimiento = 1";
 
-        String sqlUpdate = "UPDATE ordenes_servicio SET apto_mantenimiento = 0 WHERE id = ?";
+        String sqlOffice = "SELECT s.id AS id_suscripcion, c.nombre, c.telefono " +
+                "FROM suscripciones_office s " +
+                "INNER JOIN ordenes_servicio o ON s.id_orden = o.id " +
+                "INNER JOIN clientes c ON o.id_cliente = c.id " +
+                "WHERE s.fecha_vencimiento BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 1 MONTH) " +
+                "AND s.notificado = 0";
 
-        try (Connection conn = ConexionBD.conectar();
-             PreparedStatement psSelect = conn.prepareStatement(sqlSelect);
-             ResultSet rs = psSelect.executeQuery()) {
-
-            boolean huboMensajes = false;
-
-            while (rs.next()) {
-                huboMensajes = true;
-                int idOrden = rs.getInt("id");
-                String telefono = rs.getString("telefono").replaceAll("[^0-9]", "");
-                String equipo = rs.getString("marca_modelo") + " marca: " + rs.getString("dispositivo");
-
-                if (telefono.length() == 10) telefono = "52" + telefono;
-
-                String mensaje = "Hola, soy un asistente virtual de Lumtech. Te escribo para avisarte que hace 1 año recogiste tu equipo modelo: " + equipo + ", esperemos lo sigas disfrutando, y para que puedas seguir haciéndolo por mucho tiempo más te recomendamos realizar un mantenimiento a tu equipo, en donde se limpie todo el polvo que ha acumulado tu equipo y cambiemos los materiales que se han desgastado en este tiempo, si gustas agendar una cita o pedir más informes dímelos, que tengas un excelente día.";
-                String mensajeCodificado = java.net.URLEncoder.encode(mensaje, "UTF-8").replace("+", "%20");
-
-                String url = "https://wa.me/" + telefono + "?text=" + mensajeCodificado;
-                java.awt.Desktop.getDesktop().browse(new java.net.URI(url));
-
-                // Apagamos el validador para que ya no vuelva a notificar sobre esta orden
-                try (PreparedStatement psUpdate = conn.prepareStatement(sqlUpdate)) {
-                    psUpdate.setInt(1, idOrden);
-                    psUpdate.executeUpdate();
+        try (Connection conn = ConexionBD.conectar()) {
+            java.util.List<String> listaMostrar = new java.util.ArrayList<>();
+            java.util.List<Runnable> accionesWhatsApp = new java.util.ArrayList<>();
+            
+            // 1. Recopilar Mantenimientos
+            try (PreparedStatement psM = conn.prepareStatement(sqlMantenimiento); ResultSet rsM = psM.executeQuery()) {
+                while (rsM.next()) {
+                    int idOrden = rsM.getInt("id");
+                    String nombre = rsM.getString("nombre");
+                    String telefono = rsM.getString("telefono").replaceAll("[^0-9]", "");
+                    String equipo = rsM.getString("marca_modelo") + " marca: " + rsM.getString("dispositivo");
+                    
+                    listaMostrar.add(nombre + " - Mantenimiento");
+                    
+                    if (telefono.length() == 10) telefono = "52" + telefono;
+                    String mensaje = "Hola, soy un asistente virtual de Lumtech. Te escribo para avisarte que hace 1 año recogiste tu equipo modelo: " + equipo + ", esperemos lo sigas disfrutando, y para que puedas seguir haciéndolo por mucho tiempo más te recomendamos realizar un mantenimiento a tu equipo. Si gustas agendar una cita o pedir más informes dímelo. Que tengas un excelente día.";
+                    String finalTelefono = telefono;
+                    
+                    accionesWhatsApp.add(() -> {
+                        try {
+                            String url = "https://wa.me/" + finalTelefono + "?text=" + java.net.URLEncoder.encode(mensaje, "UTF-8").replace("+", "%20");
+                            java.awt.Desktop.getDesktop().browse(new java.net.URI(url));
+                            try (PreparedStatement psU = conn.prepareStatement("UPDATE ordenes_servicio SET apto_mantenimiento = 0 WHERE id = ?")) {
+                                psU.setInt(1, idOrden);
+                                psU.executeUpdate();
+                            }
+                            Thread.sleep(500);
+                        } catch (Exception ex) { ex.printStackTrace(); }
+                    });
                 }
-
-                // Pequeña pausa de medio segundo para que el navegador abra las pestañas sin saturarse
-                Thread.sleep(500);
             }
 
-            if (huboMensajes) {
-                JOptionPanePro.mostrarMensaje(this, "CRM Completado", "Se han abierto las ventanas de WhatsApp y las notificaciones fueron marcadas como procesadas.", "INFO");
-                // Refrescamos el icono de la campana para que desaparezca el punto rojo
+            // 2. Recopilar Office 365
+            try (PreparedStatement psO = conn.prepareStatement(sqlOffice); ResultSet rsO = psO.executeQuery()) {
+                while (rsO.next()) {
+                    int idSusc = rsO.getInt("id_suscripcion");
+                    String nombre = rsO.getString("nombre");
+                    String telefono = rsO.getString("telefono").replaceAll("[^0-9]", "");
+                    
+                    listaMostrar.add(nombre + " - Office");
+                    
+                    if (telefono.length() == 10) telefono = "52" + telefono;
+                    String mensaje = "Hola " + (nombre != null ? nombre : "") + ", somos de Lumtech. Te recordamos que tu suscripción de Office 365 está por vencer en el próximo mes. ¡Planifica tu renovación con nosotros para no perder acceso a tus programas! Que tengas un excelente día.";
+                    String finalTelefono = telefono;
+                    
+                    accionesWhatsApp.add(() -> {
+                        try {
+                            String url = "https://wa.me/" + finalTelefono + "?text=" + java.net.URLEncoder.encode(mensaje, "UTF-8").replace("+", "%20");
+                            java.awt.Desktop.getDesktop().browse(new java.net.URI(url));
+                            try (PreparedStatement psU = conn.prepareStatement("UPDATE suscripciones_office SET notificado = 1 WHERE id = ?")) {
+                                psU.setInt(1, idSusc);
+                                psU.executeUpdate();
+                            }
+                            Thread.sleep(500);
+                        } catch (Exception ex) { ex.printStackTrace(); }
+                    });
+                }
+            }
+
+            if (listaMostrar.isEmpty()) {
+                JOptionPanePro.mostrarMensaje(this, "Al Día", "No tienes notificaciones pendientes.", "INFO");
+                return;
+            }
+
+            // 3. Mostrar Pop-up
+            StringBuilder sb = new StringBuilder("Tienes las siguientes notificaciones:\n\n");
+            for (String item : listaMostrar) {
+                sb.append("• ").append(item).append("\n");
+            }
+            sb.append("\n¿Deseas enviar los mensajes de WhatsApp ahora?");
+            
+            int resp = JOptionPane.showConfirmDialog(this, sb.toString(), "Notificaciones CRM", JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
+            
+            if (resp == JOptionPane.YES_OPTION) {
+                for (Runnable accion : accionesWhatsApp) {
+                    accion.run();
+                }
+                JOptionPanePro.mostrarMensaje(this, "CRM Completado", "Se han procesado las notificaciones.", "INFO");
                 verificarNotificacionesCRM();
-            } else {
-                JOptionPanePro.mostrarMensaje(this, "Al Día", "No tienes recordatorios pendientes para hoy.", "INFO");
             }
 
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelDashboard.procesarNotificacionesCRM: " + e.getMessage());
             e.printStackTrace();
             JOptionPanePro.mostrarMensaje(this, "Error", "Ocurrió un problema al procesar las notificaciones.", "ERROR");
         }

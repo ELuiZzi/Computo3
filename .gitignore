@@ -39,3 +39,8 @@ build/
 
 ### Mac OS ###
 .DS_Store
+/recursos/pdf/
+comprobantes/
+dumps/
+etiquetas_generadas/
+reportes/

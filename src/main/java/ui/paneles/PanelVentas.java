@@ -40,6 +40,9 @@ public class PanelVentas extends JPanel {
     public PanelVentas() {
         setLayout(new BorderLayout());
         setBackground(Estilos.COLOR_FONDO);
+        
+        // Habilitar arrastre táctil en toda la aplicación
+        Estilos.habilitarScrollTactilGlobal();
 
         // --- IZQUIERDA: CATÁLOGO (70%) ---
         JPanel panelIzq = new JPanel(new BorderLayout());
@@ -127,16 +130,16 @@ public class PanelVentas extends JPanel {
         panelControles.setBorder(new EmptyBorder(10, 0, 10, 0));
 
         // Botón Menos (Rojo suave)
-        BotonPro btnMenos = new BotonPro("","menos.png", new Color(200, 80, 80), () -> modCantidad(-1));
-        btnMenos.setPreferredSize(new Dimension(50, 40)); // Hacemos los botones cuadrados/pequeños
+        BotonPro btnMenos = new BotonPro("","menos.png", new Color(221, 221, 221, 255), () -> modCantidad(-1));
+        btnMenos.setPreferredSize(new Dimension(60, 60)); // Hacemos los botones más grandes para pantallas táctiles
 
         // Botón Más (Verde suave)
-        BotonPro btnMas = new BotonPro("","mas.png", new Color(80, 180, 80), () -> modCantidad(1));
-        btnMas.setPreferredSize(new Dimension(50, 40));
+        BotonPro btnMas = new BotonPro("","mas.png", new Color(221, 221, 221), () -> modCantidad(1));
+        btnMas.setPreferredSize(new Dimension(60, 60));
 
         // Botón Quitar (Gris oscuro)
-        BotonPro btnQuitar = new BotonPro("Quitar Item", new Color(100, 100, 100), this::eliminarFila);
-        btnQuitar.setPreferredSize(new Dimension(120, 40));
+        BotonPro btnQuitar = new BotonPro("Quitar Item","eliminar.png", new Color(200, 80, 80), this::eliminarFila);
+        btnQuitar.setPreferredSize(new Dimension(150, 60));
 
         panelControles.add(btnMenos);
         panelControles.add(btnMas);
@@ -152,8 +155,9 @@ public class PanelVentas extends JPanel {
         lblTotal.setFont(new Font("Segoe UI", Font.BOLD, 36));
         lblTotal.setForeground(Color.WHITE);
 
-        btnPagar = new BotonPro("Vender", "vender.png", Estilos.COLOR_FONDO, () -> finalizarVenta());
-        btnPagar.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        btnPagar = new BotonPro(" COBRAR", "vender.png", new Color(46, 204, 113), () -> finalizarVenta());
+        btnPagar.setFont(new Font("Segoe UI", Font.BOLD, 26));
+
         btnPagar.setPreferredSize(new Dimension(0, 60));
 
 
@@ -174,7 +178,8 @@ public class PanelVentas extends JPanel {
         panelDer.add(lblTituloCar, BorderLayout.NORTH);
         JPanel centroDer = new JPanel(new BorderLayout());
         centroDer.setBackground(Estilos.COLOR_PANEL);
-        centroDer.add(new JScrollPane(tablaCarrito), BorderLayout.CENTER);
+        JScrollPane scrollCarrito = new JScrollPane(tablaCarrito);
+        centroDer.add(scrollCarrito, BorderLayout.CENTER);
 
         centroDer.add(panelControles, BorderLayout.SOUTH);
 
@@ -233,26 +238,21 @@ public class PanelVentas extends JPanel {
         panelCatalogo.removeAll();
         btnPaginaAnt.setEnabled(paginaActual > 1); // Solo se activa si no estamos en la pag 1
 
-        try (Connection conn = ConexionBD.conectar()) {
-            // QUERY OPTIMIZADA CON LIMIT Y OFFSET
-            String sql = "SELECT p.*, COALESCE(SUM(d.cantidad), 0) as vendidos " +
-                    "FROM productos p " +
-                    "LEFT JOIN detalle_venta d ON p.id = d.id_producto " +
-                    "WHERE p.stock > 0 AND p.activo = 1 " +
-                    "GROUP BY p.id " +
-                    "ORDER BY vendidos DESC " +
-                    "LIMIT ? OFFSET ?";
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement("SELECT p.*, COALESCE(SUM(d.cantidad), 0) as vendidos " +
+                     "FROM productos p " +
+                     "LEFT JOIN detalle_venta d ON p.id = d.id_producto " +
+                     "WHERE p.stock > 0 AND p.activo = 1 " +
+                     "GROUP BY p.id " +
+                     "ORDER BY vendidos DESC " +
+                     "LIMIT ? OFFSET ?")) {
 
-            PreparedStatement ps = conn.prepareStatement(sql);
             ps.setInt(1, LIMITE_PAGINA);
-
-            // Si estamos en pag 1, offset es 0. Si pag 2 (con limite 40), offset es 40.
             int offset = (paginaActual - 1) * LIMITE_PAGINA;
             ps.setInt(2, offset);
 
-            ResultSet rs = ps.executeQuery();
-
-            int contadorProductos = 0;
+            try (ResultSet rs = ps.executeQuery()) {
+                int contadorProductos = 0;
 
             while (rs.next()) {
                 contadorProductos++;
@@ -281,9 +281,10 @@ public class PanelVentas extends JPanel {
             btnPaginaSig.setEnabled(contadorProductos == LIMITE_PAGINA);
 
             panelCatalogo.revalidate();
-            panelCatalogo.repaint();
+            }
 
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelVentas.cargarCatalogo: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -291,14 +292,13 @@ public class PanelVentas extends JPanel {
     // --- Lógica de Carrito igual que antes ---
     private void buscarProducto(String codigo) {
         if (codigo.isEmpty()) return;
-        try (Connection conn = ConexionBD.conectar()) {
-            String query = "SELECT * FROM productos WHERE (codigo_barras = ? OR id IN (SELECT id_producto FROM codigos_adicionales WHERE codigo = ?)) AND activo = 1";
-            PreparedStatement ps = conn.prepareStatement(query);
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement("SELECT * FROM productos WHERE (codigo_barras = ? OR id IN (SELECT id_producto FROM codigos_adicionales WHERE codigo = ?)) AND activo = 1")) {
             ps.setString(1, codigo);
             ps.setString(2, codigo);
 
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
                 // Pasamos todos los datos directo de la consulta
                 agregarAlCarrito(
                         rs.getInt("id"),
@@ -312,8 +312,9 @@ public class PanelVentas extends JPanel {
                 JOptionPanePro.mostrarMensaje(this, "Error", "Producto no Encontrado", "ERROR");
             }
             txtCodigo.setText("");
-            darFocoCodigo(); // Mantener foco
+            }
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelVentas.buscarProducto: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -420,19 +421,23 @@ public class PanelVentas extends JPanel {
                 try (Connection conn = ConexionBD.conectar()) {
                     conn.setAutoCommit(false);
 
+                    int idVenta = -1;
                     // Insertar Venta
-                    PreparedStatement psV = conn.prepareStatement("INSERT INTO ventas (total_venta, ganancia_total, tipo_venta) VALUES (?, ?, 'PRODUCTO')", Statement.RETURN_GENERATED_KEYS);
-                    psV.setDouble(1, totalFinal);
-                    psV.setDouble(2, gananciaFinal);
-                    psV.executeUpdate();
+                    try (PreparedStatement psV = conn.prepareStatement("INSERT INTO ventas (total_venta, ganancia_total, tipo_venta) VALUES (?, ?, 'PRODUCTO')", Statement.RETURN_GENERATED_KEYS)) {
+                        psV.setDouble(1, totalFinal);
+                        psV.setDouble(2, gananciaFinal);
+                        psV.executeUpdate();
 
-                    ResultSet rs = psV.getGeneratedKeys();
-                    rs.next();
-                    int idVenta = rs.getInt(1);
+                        try (ResultSet rs = psV.getGeneratedKeys()) {
+                            if (rs.next()) {
+                                idVenta = rs.getInt(1);
+                            }
+                        }
+                    }
 
                     List<GeneradorTicket.ItemTicket> listaTicket = new ArrayList<>();
-                    PreparedStatement psD = conn.prepareStatement("INSERT INTO detalle_venta (id_venta, id_producto, cantidad, subtotal) VALUES (?,?,?,?)");
-                    PreparedStatement psS = conn.prepareStatement("UPDATE productos SET stock = stock - ?, cantidad_faltante = cantidad_faltante + ?, fecha_faltante = NOW() WHERE id = ?");
+                    try (PreparedStatement psD = conn.prepareStatement("INSERT INTO detalle_venta (id_venta, id_producto, cantidad, subtotal) VALUES (?,?,?,?)");
+                         PreparedStatement psS = conn.prepareStatement("UPDATE productos SET stock = stock - ?, cantidad_faltante = cantidad_faltante + ?, fecha_faltante = NOW() WHERE id = ?")) {
 
                     // Usar los datos extraídos previamente
                     for (Object[] fila : datosCarrito) {
@@ -453,6 +458,7 @@ public class PanelVentas extends JPanel {
                     }
                     psD.executeBatch();
                     psS.executeBatch();
+                    }
                     conn.commit();
 
                     // Generar Ticket String
@@ -470,6 +476,7 @@ public class PanelVentas extends JPanel {
 
                     return true; // Éxito
                 } catch (Exception e) {
+                    servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelVentas.finalizarVenta: " + e.getMessage());
                     e.printStackTrace();
                     return false; // Falló
                 }
@@ -512,12 +519,14 @@ public class PanelVentas extends JPanel {
     //Método Auxiliar para consultar Stock en BD
     private int obtenerStockReal(int idProducto) {
         int stock = 0;
-        try (Connection conn = ConexionBD.conectar()) {
-            PreparedStatement ps = conn.prepareStatement("SELECT stock FROM productos WHERE id = ?");
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement("SELECT stock FROM productos WHERE id = ?")) {
             ps.setInt(1, idProducto);
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) stock = rs.getInt("stock");
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) stock = rs.getInt("stock");
+            }
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelVentas.obtenerStockReal: " + e.getMessage());
             e.printStackTrace();
         }
         return stock;

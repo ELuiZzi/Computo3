@@ -159,14 +159,15 @@ public class SistemaPOS extends JFrame {
     }
 
     private boolean validarContrasenaEnBD(String password) {
-        try (java.sql.Connection conn = config.ConexionBD.conectar()) {
-            String sql = "SELECT 1 FROM usuarios_sistema WHERE usuario = ? AND password = ?";
-            java.sql.PreparedStatement ps = conn.prepareStatement(sql);
+        try (java.sql.Connection conn = config.ConexionBD.conectar();
+             java.sql.PreparedStatement ps = conn.prepareStatement("SELECT 1 FROM usuarios_sistema WHERE usuario = ? AND password = ?")) {
             ps.setString(1, Sesion.usuarioActual);
             ps.setString(2, password);
-            java.sql.ResultSet rs = ps.executeQuery();
-            return rs.next();
+            try (java.sql.ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
         } catch (Exception ex) {
+            LoggerPro.registrar("ERROR_DB", "Fallo en SistemaPOS.validarContrasenaEnBD: " + ex.getMessage());
             ex.printStackTrace();
             return false;
         }

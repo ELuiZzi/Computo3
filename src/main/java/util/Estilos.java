@@ -64,4 +64,56 @@ public class Estilos {
         btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
         return btn;
     }
+
+    // Activa el desplazamiento táctil (tipo smartphone) para todos los JScrollPane de la aplicación
+    private static boolean scrollTactilActivado = false;
+    
+    public static void habilitarScrollTactilGlobal() {
+        if (scrollTactilActivado) return;
+        scrollTactilActivado = true;
+
+        Toolkit.getDefaultToolkit().addAWTEventListener(new java.awt.event.AWTEventListener() {
+            private Point startPoint;
+            @Override
+            public void eventDispatched(AWTEvent event) {
+                if (event instanceof java.awt.event.MouseEvent) {
+                    java.awt.event.MouseEvent me = (java.awt.event.MouseEvent) event;
+                    if (me.getID() == java.awt.event.MouseEvent.MOUSE_PRESSED) {
+                        startPoint = me.getLocationOnScreen();
+                    } else if (me.getID() == java.awt.event.MouseEvent.MOUSE_DRAGGED && startPoint != null) {
+                        Component c = me.getComponent();
+                        JScrollPane scrollPane = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, c);
+                        
+                        // Si estamos arrastrando dentro de un JScrollPane
+                        if (scrollPane != null) {
+                            Point currentPoint = me.getLocationOnScreen();
+                            int deltaY = startPoint.y - currentPoint.y;
+                            int deltaX = startPoint.x - currentPoint.x;
+
+                            JViewport viewport = scrollPane.getViewport();
+                            Point viewPosition = viewport.getViewPosition();
+
+                            viewPosition.translate(deltaX, deltaY);
+
+                            int maxX = Math.max(0, viewport.getView().getWidth() - viewport.getWidth());
+                            int maxY = Math.max(0, viewport.getView().getHeight() - viewport.getHeight());
+
+                            viewPosition.x = Math.max(0, Math.min(maxX, viewPosition.x));
+                            viewPosition.y = Math.max(0, Math.min(maxY, viewPosition.y));
+
+                            viewport.setViewPosition(viewPosition);
+                            startPoint = currentPoint;
+                            
+                            // Si es una tabla, evitamos que seleccione texto mientras hacemos scroll
+                            if (c instanceof JTable) {
+                                me.consume();
+                            }
+                        }
+                    } else if (me.getID() == java.awt.event.MouseEvent.MOUSE_RELEASED) {
+                        startPoint = null;
+                    }
+                }
+            }
+        }, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK);
+    }
 }

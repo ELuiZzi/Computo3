@@ -25,7 +25,7 @@ public class TablaPro extends JTable {
 
         // Fuentes y Altura
         setFont(Estilos.FONT_PLAIN);
-        setRowHeight(35);
+        setRowHeight(55); // Aumentado para pantallas táctiles
 
         // Quitar bordes feos del scroll al seleccionar
         setFillsViewportHeight(true);

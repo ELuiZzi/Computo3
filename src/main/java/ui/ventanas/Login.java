@@ -137,18 +137,13 @@ public class Login extends JFrame {
             JOptionPanePro.mostrarMensaje(this, "Datos", "Ingresa usuario y contraseña.", "ADVERTENCIA");
             return;
         }
-        try (Connection conn = ConexionBD.conectar()) {
-            // CAMBIO: Agregamos BINARY antes de usuario para forzar distinción mayus/minus
-            // Y pedimos el campo 'genero'
-            String sql = "SELECT rol, genero FROM usuarios_sistema WHERE BINARY usuario = ? AND password = ?";
-
-            PreparedStatement ps = conn.prepareStatement(sql);
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement("SELECT rol, genero FROM usuarios_sistema WHERE BINARY usuario = ? AND password = ?")) {
             ps.setString(1, user);
             ps.setString(2, pass);
 
-            ResultSet rs = ps.executeQuery();
-
-            if (rs.next()) {
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
                 String rol = rs.getString("rol");
                 String genero = rs.getString("genero");
 
@@ -164,10 +159,12 @@ public class Login extends JFrame {
 
                 new SistemaPOS(rol).setVisible(true);
                 this.dispose();
-            }else {
-                JOptionPanePro.mostrarMensaje(this, "Error", "Credenciales incorrectas (Verifica mayúsculas).", "ERROR");
+                } else {
+                    JOptionPanePro.mostrarMensaje(this, "Error", "Credenciales incorrectas (Verifica mayúsculas).", "ERROR");
+                }
             }
-        }catch (Exception e) {
+        } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en Login.validarIngreso: " + e.getMessage());
             e.printStackTrace();
             JOptionPanePro.mostrarMensaje(this, "Error", "Error de conexión: " + e.getMessage(), "ERROR");
         }

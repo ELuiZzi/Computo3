@@ -50,6 +50,9 @@ public class PanelInventario extends JPanel {
     // Botones Personalizados (Guardamos referencia al de guardar para cambiarle el texto)
     private final BotonPro btnAccionPrincipal;
     private final JTextField txtBuscar;
+    
+    // Control de hilos para búsquedas optimizadas
+    private SwingWorker<List<Object[]>, Void> workerBuscador;
 
     public PanelInventario() {
         setLayout(new BorderLayout());
@@ -235,7 +238,22 @@ public class PanelInventario extends JPanel {
         txtBuscar = new JTextField(20);
         Estilos.estilizarInput(txtBuscar);
         txtBuscar.putClientProperty("JTextField.placeholderText", "Código o Nombre...");
-        txtBuscar.addActionListener(e -> filtrarInventario());
+        
+        // Búsqueda en tiempo real optimizada (Debounce de 350ms)
+        Timer debounceTimer = new Timer(350, e -> filtrarInventario());
+        debounceTimer.setRepeats(false);
+        
+        txtBuscar.getDocument().addDocumentListener(new DocumentListener() {
+            public void insertUpdate(DocumentEvent e) { debounceTimer.restart(); }
+            public void removeUpdate(DocumentEvent e) { debounceTimer.restart(); }
+            public void changedUpdate(DocumentEvent e) { debounceTimer.restart(); }
+        });
+        
+        // Mantener el enter por si el usuario es muy rápido
+        txtBuscar.addActionListener(e -> {
+            debounceTimer.stop();
+            filtrarInventario();
+        });
 
         BotonPro btnBuscar = new BotonPro("IR", Estilos.COLOR_ACCENT, this::filtrarInventario);
         BotonPro btnTodo = new BotonPro("TODO", Color.DARK_GRAY, this::cargarTabla);
@@ -342,6 +360,11 @@ public class PanelInventario extends JPanel {
     private void filtrarInventario() {
         String texto = txtBuscar.getText().trim();
 
+        // Cancelar búsqueda anterior si aún está corriendo
+        if (workerBuscador != null && !workerBuscador.isDone()) {
+            workerBuscador.cancel(true);
+        }
+
         // Si está vacío, cargamos todo normal (cargarTabla ya usa SwingWorker)
         if (texto.isEmpty()) {
             cargarTabla();
@@ -351,7 +374,7 @@ public class PanelInventario extends JPanel {
         // Limpiamos la tabla en el hilo principal (EDT) antes de buscar
         modelo.setRowCount(0);
 
-        SwingWorker<List<Object[]>, Void> worker = new SwingWorker<>() {
+        workerBuscador = new SwingWorker<>() {
 
             @Override
             protected List<Object[]> doInBackground() throws Exception {
@@ -389,12 +412,16 @@ public class PanelInventario extends JPanel {
 
             @Override
             protected void done() {
+                if (isCancelled()) return; // Ignorar si fue cancelado por otra búsqueda
+                
                 // Hilo de la Interfaz: Seguro para actualizar UI
                 try {
                     List<Object[]> filas = get();
 
                     if (filas.isEmpty()) {
-                        JOptionPanePro.mostrarMensaje(PanelInventario.this, "Sin Resultados", "No se encontró ningún producto con: " + texto, "INFO");
+                        // Opcional: mostrar un indicador visual ligero en vez de un diálogo molesto en búsquedas en tiempo real
+                        // Por ahora lo dejamos vacío o con un mensaje muy sutil si se desea.
+                        // Quitamos el Dialog para no interrumpir al usuario mientras escribe.
                     } else {
                         // Agregar todo de golpe
                         for (Object[] fila : filas) {
@@ -410,13 +437,14 @@ public class PanelInventario extends JPanel {
                         }
                     }
                 } catch (Exception e) {
-                    e.printStackTrace();
-                    JOptionPanePro.mostrarMensaje(PanelInventario.this, "Error", "Ocurrió un error durante la búsqueda.", "ERROR");
+                    if (!(e instanceof java.util.concurrent.CancellationException)) {
+                        e.printStackTrace();
+                    }
                 }
             }
         };
 
-        worker.execute();
+        workerBuscador.execute();
     }
 
     // --- LÓGICA AUTOMÁTICA ---
@@ -464,38 +492,37 @@ public class PanelInventario extends JPanel {
     private void ejecutarSQL(String accion) {
         try (Connection conn = ConexionBD.conectar()) {
             String sql = "";
-            PreparedStatement ps;
-
             if (accion.equals("INSERT")) {
                 sql = "INSERT INTO productos (codigo_barras, nombre, marca, modelo, categoria, proveedor, costo, precio, stock, precio_mercado_min, precio_mercado_prom, precio_mercado_max, margen_ganancia) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)";
-                ps = conn.prepareStatement(sql);
-                // ... (Parámetros 1 al 13)
-                llenarParams(ps);
-                ps.executeUpdate();
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    llenarParams(ps);
+                    ps.executeUpdate();
+                }
                 JOptionPanePro.mostrarMensaje(this, "Éxito", "Guardado Exitosamente", "INFO");
 
             } else if (accion.equals("UPDATE")) {
                 sql = "UPDATE productos SET codigo_barras=?, nombre=?, marca=?, modelo=?, categoria=?, proveedor=?, costo=?, precio=?, stock=?, precio_mercado_min=?, precio_mercado_prom=?, precio_mercado_max=?, margen_ganancia=? WHERE id=?";
-                ps = conn.prepareStatement(sql);
-                llenarParams(ps);
-                ps.setInt(14, Integer.parseInt(txtId.getText())); // El ID para el WHERE
-                ps.executeUpdate();
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    llenarParams(ps);
+                    ps.setInt(14, Integer.parseInt(txtId.getText())); // El ID para el WHERE
+                    ps.executeUpdate();
+                }
                 JOptionPanePro.mostrarMensaje(this, "Éxito", "Producto Actualizado", "INFO");
 
             } else if (accion.equals("DELETE")) {
                 sql = "UPDATE productos SET activo = 0 WHERE id = ?";
-                ps = conn.prepareStatement(sql);
-                ps.setInt(1, Integer.parseInt(txtId.getText()));
-                ps.executeUpdate();
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    ps.setInt(1, Integer.parseInt(txtId.getText()));
+                    ps.executeUpdate();
+                }
                 JOptionPanePro.mostrarMensaje(this, "Éxito", "Producto Eliminado", "INFO");
-
             }
 
             cargarTabla();
             limpiar();
         } catch (Exception ex) {
-            JOptionPanePro.mostrarMensaje(this, "Éxito", ex.getMessage(), "ERROR");
-
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelInventario.ejecutarSQL: " + ex.getMessage());
+            JOptionPanePro.mostrarMensaje(this, "Error", ex.getMessage(), "ERROR");
             ex.printStackTrace();
         }
     }
@@ -571,6 +598,7 @@ public class PanelInventario extends JPanel {
                 btnAccionPrincipal.setBackground(new Color(255, 140, 0)); // Naranja
             }
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelInventario.llenarDatosDesdeTabla: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -696,9 +724,11 @@ public class PanelInventario extends JPanel {
     private void cargarProveedores() { /* Mismo código de antes */
         cmbProveedor.removeAllItems();
         try (Connection c = ConexionBD.conectar(); Statement s = c.createStatement()) {
-            ResultSet r = s.executeQuery("SELECT DISTINCT proveedor FROM productos");
-            while (r.next()) cmbProveedor.addItem(r.getString(1));
+            try (ResultSet r = s.executeQuery("SELECT DISTINCT proveedor FROM productos")) {
+                while (r.next()) cmbProveedor.addItem(r.getString(1));
+            }
         } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelInventario.cargarProveedores: " + e.getMessage());
         }
     }
 
