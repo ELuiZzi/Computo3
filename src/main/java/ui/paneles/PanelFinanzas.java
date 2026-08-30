@@ -23,6 +23,7 @@ import servicios.ImpresoraTicket;
 import ui.componentes.BotonPro;
 import ui.componentes.JOptionPanePro;
 import ui.componentes.TablaPro;
+import ui.componentes.ToastPro;
 import java.awt.geom.Arc2D;
 import java.io.File;
 
@@ -659,8 +660,8 @@ public class PanelFinanzas extends JPanel {
                 // 3. Invocar al motor de PDF PASÁNDOLE LAS VARIABLES DEL PANEL
                 servicios.GeneradorPDF.generarReporteRotacion(rutaFinal, mesSeleccionado, anioSeleccionado);
 
-                // 4. Notificar al usuario discretamente
-                JOptionPanePro.mostrarMensaje(PanelFinanzas.this, "Éxito", "Reporte guardado en la carpeta 'reportes'.", "INFO");
+                // 4. Notificar al usuario discretamente usando Toast
+                ToastPro.show("Reporte generado", "EXITO");
 
                 // 5. Abrir el archivo automáticamente
                 java.awt.Desktop.getDesktop().open(new java.io.File(rutaFinal));

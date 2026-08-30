@@ -215,6 +215,13 @@ public class SistemaPOS extends JFrame {
         // LA MAGIA: Escuchar el teclado en tiempo real
         pf.addKeyListener(new java.awt.event.KeyAdapter() {
             @Override
+            public void keyPressed(java.awt.event.KeyEvent e) {
+                if (e.getKeyCode() == java.awt.event.KeyEvent.VK_ESCAPE) {
+                    dialog.dispose(); // Cerrar el diálogo y cancelar
+                }
+            }
+            
+            @Override
             public void keyTyped(java.awt.event.KeyEvent e) {
                 char c = e.getKeyChar();
                 // 1. Bloquear letras (solo números) permitiendo borrar (backspace)

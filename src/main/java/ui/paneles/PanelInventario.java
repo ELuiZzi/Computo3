@@ -256,7 +256,12 @@ public class PanelInventario extends JPanel {
         });
 
         BotonPro btnBuscar = new BotonPro("IR", Estilos.COLOR_ACCENT, this::filtrarInventario);
-        BotonPro btnTodo = new BotonPro("TODO", Color.DARK_GRAY, this::cargarTabla);
+        BotonPro btnTodo = new BotonPro("TODO", Color.DARK_GRAY, () -> {
+            txtBuscar.setText(""); // Dispara el listener que reinicia el timer
+            debounceTimer.stop();  // Lo detenemos inmediatamente para evitar la doble carga (parpadeo)
+            filtrarInventario();   // Hacemos la carga instantánea nosotros mismos
+            txtBuscar.requestFocus();
+        });
         BotonPro btnNuevoProducto = new BotonPro("+ NUEVO PRODUCTO", new Color(46, 204, 113), () -> {
             Frame padre = (Frame) SwingUtilities.getWindowAncestor(this);
             DialogoProducto dialogo = new DialogoProducto(padre, -1, this::cargarTabla);

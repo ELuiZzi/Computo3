@@ -36,6 +36,7 @@ public class PanelVentas extends JPanel {
     private BotonPro btnPaginaAnt;
     private BotonPro btnPaginaSig;
     private JLabel lblPaginaActual;
+    private String filtroBusqueda = "";
 
     public PanelVentas() {
         setLayout(new BorderLayout());
@@ -56,7 +57,21 @@ public class PanelVentas extends JPanel {
 
         txtCodigo = new JTextField();
         Estilos.estilizarInput(txtCodigo);
-        txtCodigo.putClientProperty("JTextField.placeholderText", " Escanear código de barras...");
+        txtCodigo.putClientProperty("JTextField.placeholderText", " Escanear código o buscar nombre...");
+
+        txtCodigo.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { actualizarFiltro(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { actualizarFiltro(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { actualizarFiltro(); }
+            private void actualizarFiltro() {
+                String texto = txtCodigo.getText().trim();
+                if (!filtroBusqueda.equals(texto)) {
+                    filtroBusqueda = texto;
+                    paginaActual = 1;
+                    cargarCatalogo();
+                }
+            }
+        });
 
         BotonPro btnBuscar = new BotonPro("Buscar", Estilos.COLOR_PANEL, () -> buscarProducto(txtCodigo.getText()));
 
@@ -71,8 +86,13 @@ public class PanelVentas extends JPanel {
         // Grid Productos (Fondo oscuro)
         panelCatalogo = new JPanel(new GridLayout(0, 2, 15, 15)); // Más espaciado
         panelCatalogo.setBackground(Estilos.COLOR_FONDO);
+        
+        // Envolver en un BorderLayout.NORTH evita que se estiren verticalmente si hay pocos
+        JPanel contenedorCatalogo = new JPanel(new BorderLayout());
+        contenedorCatalogo.setBackground(Estilos.COLOR_FONDO);
+        contenedorCatalogo.add(panelCatalogo, BorderLayout.NORTH);
 
-        JScrollPane scrollCat = new JScrollPane(panelCatalogo);
+        JScrollPane scrollCat = new JScrollPane(contenedorCatalogo);
         scrollCat.setBorder(null);
         scrollCat.getViewport().setBackground(Estilos.COLOR_FONDO);
 
@@ -238,18 +258,32 @@ public class PanelVentas extends JPanel {
         panelCatalogo.removeAll();
         btnPaginaAnt.setEnabled(paginaActual > 1); // Solo se activa si no estamos en la pag 1
 
-        try (Connection conn = ConexionBD.conectar();
-             PreparedStatement ps = conn.prepareStatement("SELECT p.*, COALESCE(SUM(d.cantidad), 0) as vendidos " +
+        String sql = "SELECT p.*, COALESCE(SUM(d.cantidad), 0) as vendidos " +
                      "FROM productos p " +
                      "LEFT JOIN detalle_venta d ON p.id = d.id_producto " +
-                     "WHERE p.stock > 0 AND p.activo = 1 " +
-                     "GROUP BY p.id " +
-                     "ORDER BY vendidos DESC " +
-                     "LIMIT ? OFFSET ?")) {
+                     "WHERE p.stock > 0 AND p.activo = 1 ";
+                     
+        if (!filtroBusqueda.isEmpty()) {
+            sql += "AND (p.nombre LIKE ? OR p.codigo_barras LIKE ?) ";
+        }
+        
+        sql += "GROUP BY p.id " +
+               "ORDER BY vendidos DESC " +
+               "LIMIT ? OFFSET ?";
 
-            ps.setInt(1, LIMITE_PAGINA);
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            int paramIndex = 1;
+            if (!filtroBusqueda.isEmpty()) {
+                String likeFiltro = "%" + filtroBusqueda + "%";
+                ps.setString(paramIndex++, likeFiltro);
+                ps.setString(paramIndex++, likeFiltro);
+            }
+            
+            ps.setInt(paramIndex++, LIMITE_PAGINA);
             int offset = (paginaActual - 1) * LIMITE_PAGINA;
-            ps.setInt(2, offset);
+            ps.setInt(paramIndex, offset);
 
             try (ResultSet rs = ps.executeQuery()) {
                 int contadorProductos = 0;
@@ -299,19 +333,23 @@ public class PanelVentas extends JPanel {
 
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                // Pasamos todos los datos directo de la consulta
-                agregarAlCarrito(
-                        rs.getInt("id"),
-                        rs.getString("nombre"),
-                        rs.getDouble("precio"),
-                        rs.getDouble("costo"),
-                        rs.getInt("stock")
-                );
-            }
-            else {
-                JOptionPanePro.mostrarMensaje(this, "Error", "Producto no Encontrado", "ERROR");
-            }
-            txtCodigo.setText("");
+                    // Pasamos todos los datos directo de la consulta
+                    agregarAlCarrito(
+                            rs.getInt("id"),
+                            rs.getString("nombre"),
+                            rs.getDouble("precio"),
+                            rs.getDouble("costo"),
+                            rs.getInt("stock")
+                    );
+                    txtCodigo.setText("");
+                } else {
+                    // Si no lo encuentra como código exacto, asumimos que el usuario solo presionó Enter después de buscar por nombre.
+                    // Mostramos error solo si no hay resultados en el catálogo visual (búsqueda fallida).
+                    if (panelCatalogo.getComponentCount() == 0) {
+                        JOptionPanePro.mostrarMensaje(this, "Error", "Producto no Encontrado", "ERROR");
+                        txtCodigo.setText("");
+                    }
+                }
             }
         } catch (Exception e) {
             servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelVentas.buscarProducto: " + e.getMessage());
@@ -346,6 +384,12 @@ public class PanelVentas extends JPanel {
             modeloCarrito.addRow(new Object[]{id, nombre, 1, precio, precio, precio - costo});
             calcularTotal();
         }
+        
+        // Auto-limpiar búsqueda y regresar el foco para mayor agilidad
+        if (!txtCodigo.getText().isEmpty()) {
+            txtCodigo.setText("");
+        }
+        darFocoCodigo();
     }
 
     private void modCantidadEnFila(int row, int delta) {

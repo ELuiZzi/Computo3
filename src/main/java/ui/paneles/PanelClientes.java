@@ -82,14 +82,13 @@ public class PanelClientes extends JPanel {
         pDetalle.setBorder(new EmptyBorder(10, 20, 10, 20));
 
         // --- Formulario Edición ---
-        JPanel pForm = new JPanel(new GridBagLayout());
+        JPanel pForm = new JPanel(new BorderLayout());
         pForm.setBackground(Estilos.COLOR_PANEL);
         pForm.setBorder(BorderFactory.createTitledBorder(null, "Perfil del Cliente", 0,0, Estilos.FONT_BOLD, Color.WHITE));
-        GridBagConstraints g = new GridBagConstraints();
-        g.insets = new Insets(5, 5, 5, 5); g.fill = GridBagConstraints.HORIZONTAL;
 
         txtNombre = new JTextField(20); Estilos.estilizarInput(txtNombre);
         txtTelefono = new JTextField(15); Estilos.estilizarInput(txtTelefono);
+        txtTelefono.setHorizontalAlignment(JTextField.CENTER);
 
         // Stats
         lblTotalOrdenes = new JLabel("0 Órdenes");
@@ -102,30 +101,104 @@ public class PanelClientes extends JPanel {
 
         // Armado Form
 
+        // Boton Eliminar Redondo
+        JPanel btnEliminarRedondo = new JPanel(new BorderLayout()) {
+            @Override
+            protected void paintComponent(Graphics g2d) {
+                Graphics2D g2 = (Graphics2D) g2d.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                if (getMousePosition() != null) g2.setColor(new Color(230, 80, 80));
+                else g2.setColor(new Color(200, 50, 50));
+                g2.fillOval(0, 0, getWidth(), getHeight());
+                g2.dispose();
+            }
+        };
+        btnEliminarRedondo.setOpaque(false);
+        btnEliminarRedondo.setPreferredSize(new Dimension(35, 35));
+        btnEliminarRedondo.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btnEliminarRedondo.setToolTipText("Eliminar Cliente");
+        ImageIcon iconoBasura = Recursos.getIcono("eliminar.png");
+        if (iconoBasura != null) {
+            Image img = iconoBasura.getImage().getScaledInstance(18, 18, Image.SCALE_SMOOTH);
+            btnEliminarRedondo.add(new JLabel(new ImageIcon(img)), BorderLayout.CENTER);
+        }
+        btnEliminarRedondo.addMouseListener(new MouseAdapter() {
+            public void mouseClicked(MouseEvent e) { eliminarCliente(); }
+            public void mouseEntered(MouseEvent e) { btnEliminarRedondo.repaint(); }
+            public void mouseExited(MouseEvent e) { btnEliminarRedondo.repaint(); }
+        });
 
-        g.gridx=0; g.gridy=0; pForm.add(lbl("WhatsApp:"), g);
-        g.gridx=1; pForm.add(txtTelefono, g);
+        // Boton WhatsApp Redondo
+        JPanel btnWhatsAppRedondo = new JPanel(new BorderLayout()) {
+            @Override
+            protected void paintComponent(Graphics g2d) {
+                Graphics2D g2 = (Graphics2D) g2d.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                if (getMousePosition() != null) g2.setColor(new Color(60, 220, 120));
+                else g2.setColor(new Color(37, 211, 102));
+                g2.fillOval(0, 0, getWidth(), getHeight());
+                g2.dispose();
+            }
+        };
+        btnWhatsAppRedondo.setOpaque(false);
+        btnWhatsAppRedondo.setPreferredSize(new Dimension(35, 35));
+        btnWhatsAppRedondo.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btnWhatsAppRedondo.setToolTipText("Abrir Chat de WhatsApp");
+        ImageIcon iconoWa = Recursos.getIcono("whatsapp.png");
+        if (iconoWa != null) {
+            Image imgWa = iconoWa.getImage().getScaledInstance(18, 18, Image.SCALE_SMOOTH);
+            btnWhatsAppRedondo.add(new JLabel(new ImageIcon(imgWa)), BorderLayout.CENTER);
+        }
+        btnWhatsAppRedondo.addMouseListener(new MouseAdapter() {
+            public void mouseClicked(MouseEvent e) { abrirWhatsApp(); }
+            public void mouseEntered(MouseEvent e) { btnWhatsAppRedondo.repaint(); }
+            public void mouseExited(MouseEvent e) { btnWhatsAppRedondo.repaint(); }
+        });
 
-        g.gridx=0; g.gridy=1; pForm.add(lbl("Nombre:"), g);
-        g.gridx=1; pForm.add(txtNombre, g);
+        // Panel lateral para botones (Esquina Superior Derecha)
+        JPanel pBotonesDerecha = new JPanel();
+        pBotonesDerecha.setLayout(new BoxLayout(pBotonesDerecha, BoxLayout.Y_AXIS));
+        pBotonesDerecha.setBackground(Estilos.COLOR_PANEL);
+        pBotonesDerecha.setBorder(new EmptyBorder(5, 10, 0, 5)); // Margen superior e izquierdo
+        pBotonesDerecha.add(btnEliminarRedondo);
+        pBotonesDerecha.add(Box.createRigidArea(new Dimension(0, 8))); // Separador
+        pBotonesDerecha.add(btnWhatsAppRedondo);
 
-        g.gridx=0; g.gridy=2; pForm.add(lbl("Historial:"), g);
+        // Contenedor para que los botones se peguen al techo del Este
+        JPanel pEast = new JPanel(new BorderLayout());
+        pEast.setBackground(Estilos.COLOR_PANEL);
+        pEast.add(pBotonesDerecha, BorderLayout.NORTH);
+        pForm.add(pEast, BorderLayout.EAST);
+
+        // Layout Central (Campos centraditos sin estirarse alocadamente)
+        JPanel pCampos = new JPanel(new GridBagLayout());
+        pCampos.setBackground(Estilos.COLOR_PANEL);
+        GridBagConstraints g = new GridBagConstraints();
+        g.insets = new Insets(8, 10, 8, 10);
+        g.anchor = GridBagConstraints.WEST;
+
+        g.gridx=0; g.gridy=0; pCampos.add(lbl("WhatsApp:"), g);
+        g.gridx=1; pCampos.add(txtTelefono, g);
+
+        g.gridx=0; g.gridy=1; pCampos.add(lbl("Nombre:"), g);
+        g.gridx=1; pCampos.add(txtNombre, g);
+
+        g.gridx=0; g.gridy=2; pCampos.add(lbl("Historial:"), g);
         JPanel pStats = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         pStats.setBackground(Estilos.COLOR_PANEL);
         pStats.add(lblTotalOrdenes); pStats.add(new JLabel("|")); pStats.add(lblTotalGastado);
-        g.gridx=1; pForm.add(pStats, g);
+        g.gridx=1; pCampos.add(pStats, g);
 
-        // Botonera Edición
+        pForm.add(pCampos, BorderLayout.CENTER);
+
+        // Botonera Sur
         JPanel pBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         pBtns.setBackground(Estilos.COLOR_PANEL);
-
-        BotonPro btnWhats = new BotonPro("Abrir Chat", "whatsapp.png", new Color(37, 211, 102), this::abrirWhatsApp);
-        BotonPro btnGuardar = new BotonPro("Guardar Cambios", "guardar.png", Estilos.COLOR_ACCENT, this::guardarCambios);
-
-        pBtns.add(btnWhats);
+        BotonPro btnGuardar = new BotonPro("Guardar", "guardar.png", Estilos.COLOR_ACCENT, this::guardarCambios);
+        btnGuardar.setPreferredSize(new Dimension(130, 35)); // Más discreto
         pBtns.add(btnGuardar);
 
-        g.gridx=0; g.gridy=3; g.gridwidth=2; pForm.add(pBtns, g);
+        pForm.add(pBtns, BorderLayout.SOUTH);
 
         // --- Historial de Reparaciones ---
         JPanel pHistorial = new JPanel(new BorderLayout());
@@ -231,6 +304,58 @@ public class PanelClientes extends JPanel {
         } catch (Exception e) {
             servicios.LoggerPro.registrar("ERROR_DB", "Fallo en PanelClientes.cargarHistorial: " + e.getMessage());
             e.printStackTrace();
+        }
+    }
+
+    private void eliminarCliente() {
+        if (idClienteSeleccionado == -1) {
+            JOptionPanePro.mostrarMensaje(this, "Aviso", "Selecciona un cliente de la lista.", "ADVERTENCIA");
+            return;
+        }
+
+        if (!JOptionPanePro.mostrarConfirmacion(this, "Eliminar Cliente", "¿Seguro que deseas eliminar permanentemente a este cliente?")) {
+            return;
+        }
+
+        String pin = JOptionPanePro.solicitarEntrada(this, "Autorización", "Ingresa el PIN de Administrador:");
+        if (pin == null || pin.isEmpty()) return;
+
+        // Validar PIN
+        boolean pinValido = false;
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement("SELECT 1 FROM usuarios_sistema WHERE usuario = ? AND password = ?")) {
+            ps.setString(1, config.Sesion.usuarioActual);
+            ps.setString(2, pin);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) pinValido = true;
+            }
+        } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo al validar PIN en eliminarCliente: " + e.getMessage());
+        }
+
+        if (!pinValido) {
+            JOptionPanePro.mostrarMensaje(this, "Denegado", "PIN Incorrecto.", "ERROR");
+            return;
+        }
+
+        // Eliminar de BD
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement ps = conn.prepareStatement("DELETE FROM clientes WHERE id = ?")) {
+            ps.setInt(1, idClienteSeleccionado);
+            int aff = ps.executeUpdate();
+            if (aff > 0) {
+                JOptionPanePro.mostrarMensaje(this, "Éxito", "Cliente eliminado.", "INFO");
+                idClienteSeleccionado = -1;
+                txtNombre.setText("");
+                txtTelefono.setText("");
+                modeloHistorial.setRowCount(0);
+                lblTotalOrdenes.setText("0 Órdenes");
+                lblTotalGastado.setText("$0.00 Invertidos");
+                cargarClientes();
+            }
+        } catch (Exception e) {
+            servicios.LoggerPro.registrar("ERROR_DB", "Fallo al eliminar cliente: " + e.getMessage());
+            JOptionPanePro.mostrarMensaje(this, "Error", "No se puede eliminar. Probablemente el cliente tenga órdenes vinculadas en el historial.", "ERROR");
         }
     }
 

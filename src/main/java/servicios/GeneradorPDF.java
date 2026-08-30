@@ -35,22 +35,43 @@ public class GeneradorPDF {
             // PÁGINA 1: ORDEN DE TRABAJO (GENERADA)
             // ==========================================
 
-            // 1. LOGO (Esquina superior izquierda)
-            try {
-                // Asume que logo.png está en la raíz o carpeta recursos
-                Image logo = Image.getInstance("recursos/logo2.png");
-                logo.scaleToFit(120, 100); // Ajustar tamaño
-                logo.setAlignment(Element.ALIGN_LEFT);
-                document.add(logo);
-            } catch (Exception e) {
-                // Si no hay logo, no pasa nada
-            }
+            // 1. y 2. ENCABEZADO (Logo, Título, WhatsApp y Tickets)
+            PdfPTable tablaHeader = new PdfPTable(3);
+            tablaHeader.setWidthPercentage(100);
+            tablaHeader.setWidths(new float[]{1f, 2f, 1f});
 
-            // 2. Encabezado
+            // Columna 1: Logo
+            PdfPCell cellLogo = new PdfPCell();
+            cellLogo.setBorder(Rectangle.NO_BORDER);
+            try {
+                Image logo = Image.getInstance("recursos/logo2.png");
+                logo.scaleToFit(120, 100);
+                cellLogo.addElement(logo);
+            } catch (Exception e) {}
+            tablaHeader.addCell(cellLogo);
+
+            // Columna 2: Título
+            PdfPCell cellTitulo = new PdfPCell();
+            cellTitulo.setBorder(Rectangle.NO_BORDER);
+            cellTitulo.setHorizontalAlignment(Element.ALIGN_CENTER);
+            cellTitulo.setVerticalAlignment(Element.ALIGN_MIDDLE);
+            
             Paragraph empresa = new Paragraph("LUMTECH\nOrden de Servicio", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16));
             empresa.setAlignment(Element.ALIGN_CENTER);
-            document.add(empresa);
+            cellTitulo.addElement(empresa);
+            
+            tablaHeader.addCell(cellTitulo);
 
+            // Columna 3: Tickets. (Esquina superior derecha)
+            PdfPCell cellTickets = new PdfPCell();
+            cellTickets.setBorder(Rectangle.NO_BORDER);
+            cellTickets.setHorizontalAlignment(Element.ALIGN_RIGHT);
+            Paragraph txtTickets = new Paragraph("Tickets.", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12));
+            txtTickets.setAlignment(Element.ALIGN_RIGHT);
+            cellTickets.addElement(txtTickets);
+            tablaHeader.addCell(cellTickets);
+
+            document.add(tablaHeader);
             document.add(new Paragraph("\n")); // Espacio
 
             // 3. Tabla de Datos Principales
@@ -107,15 +128,38 @@ public class GeneradorPDF {
                 document.add(tTintas);
             }
 
-            // 6. Espacio para Firma
-            document.add(new Paragraph("\n\n\n\n\n"));
-            LineSeparator linea = new LineSeparator();
-            linea.setPercentage(40);
-            document.add(linea);
+            // 6. Tarjeta de Datos de Contacto (Absoluta en esquina inferior izquierda)
+            PdfPTable tablaContacto = new PdfPTable(1);
+            tablaContacto.setTotalWidth(220); // Ancho fijo para posicionamiento absoluto
+            
+            PdfPCell cellContacto = new PdfPCell();
+            cellContacto.setBorderWidth(1f);
+            cellContacto.setBorderColor(BaseColor.LIGHT_GRAY);
+            cellContacto.setPadding(10);
+            
+            // Agregué 'LUMTECH' para que quede clarísimo de quién es la info
+            Paragraph tituloContacto = new Paragraph("Contacto LUMTECH:", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12));
+            tituloContacto.setAlignment(Element.ALIGN_CENTER);
+            cellContacto.addElement(tituloContacto);
 
-            Paragraph firma = new Paragraph("FIRMA DE CONFORMIDAD DEL CLIENTE", FontFactory.getFont(FontFactory.HELVETICA, 8));
-            firma.setAlignment(Element.ALIGN_CENTER);
-            document.add(firma);
+            Paragraph pContactoWa = new Paragraph();
+            pContactoWa.setAlignment(Element.ALIGN_CENTER);
+            pContactoWa.setSpacingBefore(5);
+            try {
+                Image imgWa2 = Image.getInstance("recursos/whatsapp_logo.png");
+                imgWa2.scaleToFit(14, 14);
+                pContactoWa.add(new Chunk(imgWa2, 0, -2, true));
+            } catch (Exception e) {}
+            pContactoWa.add(new Chunk(" 7771908024", FontFactory.getFont(FontFactory.HELVETICA, 12)));
+            cellContacto.addElement(pContactoWa);
+
+            tablaContacto.addCell(cellContacto);
+            
+            // Dibujar la tabla en la esquina inferior izquierda absoluta
+            float altoTabla = tablaContacto.getTotalHeight();
+            if(altoTabla == 0) altoTabla = 65; // Fallback aproximado
+            
+            tablaContacto.writeSelectedRows(0, -1, document.left(), document.bottom() + altoTabla, writer.getDirectContent());
 
             // ==========================================
             // PÁGINA 2: TÉRMINOS Y CONDICIONES (ADJUNTA)

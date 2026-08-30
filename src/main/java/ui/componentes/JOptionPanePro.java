@@ -171,6 +171,18 @@ public class JOptionPanePro {
 
         dialog.setLocationRelativeTo(parent);
 
+        // =======================================================
+        // Habilitar tecla ESCAPE para cerrar cualquier diálogo
+        // =======================================================
+        javax.swing.KeyStroke escape = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0);
+        dialog.getRootPane().getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW).put(escape, "cerrarConEscape");
+        dialog.getRootPane().getActionMap().put("cerrarConEscape", new javax.swing.AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                dialog.dispose();
+            }
+        });
+
         return dialog;
     }
 
